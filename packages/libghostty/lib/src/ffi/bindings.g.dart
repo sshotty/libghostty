@@ -1248,6 +1248,20 @@ external int ghostty_terminal_get_title(
   int out_size,
 );
 
+/// Returns the current mouse pointer shape set by the terminal application.
+///
+/// Maps to the W3C CSS cursor specification values. Returns 8 (text) when
+/// no shape has been set by the application.
+///
+/// @param terminal The terminal handle, must not be NULL
+/// @return The mouse shape as a uint8 value from the MouseShape enum
+///
+/// @ingroup terminal
+@ffi.Native<ffi.Uint8 Function(ffi.Pointer<GhosttyTerminal>)>()
+external int ghostty_terminal_get_mouse_shape(
+  ffi.Pointer<GhosttyTerminal> terminal,
+);
+
 /// Result codes for libghostty-vt operations.
 enum GhosttyResult {
   /// Operation completed successfully
