@@ -35,11 +35,17 @@ enum OscCommandType {
   conemuComment(21),
   kittyTextSizing(22);
 
-  static final _nativeMap = {for (final type in values) type.nativeValue: type};
+  final int _nativeValue;
 
-  final int nativeValue;
+  const OscCommandType(this._nativeValue);
+}
 
-  const OscCommandType(this.nativeValue);
+extension OscCommandTypeNative on OscCommandType {
+  static final _nativeMap = {
+    for (final type in OscCommandType.values) type._nativeValue: type,
+  };
+
+  int get nativeValue => _nativeValue;
 
   static OscCommandType fromNative(int value) => _nativeMap[value] ?? .invalid;
 }

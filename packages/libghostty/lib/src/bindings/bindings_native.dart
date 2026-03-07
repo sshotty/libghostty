@@ -4,8 +4,8 @@ import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 
-import '../exceptions.dart';
 import '../ffi/bindings.g.dart' as native;
+import '../result.dart';
 import 'interface.dart';
 
 final GhosttyBindings bindings = NativeBindings();

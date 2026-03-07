@@ -1,7 +1,7 @@
 @Tags(['ffi'])
 library;
 
-import 'package:libghostty/libghostty.dart';
+import 'package:libghostty/src/terminal/mouse.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -15,14 +15,14 @@ void main() {
 
     test('fromNative round-trips for every value', () {
       for (final shape in MouseShape.values) {
-        expect(MouseShape.fromNative(shape.nativeValue), shape);
+        expect(MouseShapeNative.fromNative(shape.nativeValue), shape);
       }
     });
 
     test('fromNative returns text for unknown values', () {
-      expect(MouseShape.fromNative(-1), MouseShape.text);
-      expect(MouseShape.fromNative(34), MouseShape.text);
-      expect(MouseShape.fromNative(999), MouseShape.text);
+      expect(MouseShapeNative.fromNative(-1), MouseShape.text);
+      expect(MouseShapeNative.fromNative(34), MouseShape.text);
+      expect(MouseShapeNative.fromNative(999), MouseShape.text);
     });
   });
 }

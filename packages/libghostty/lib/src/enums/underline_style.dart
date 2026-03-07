@@ -1,5 +1,3 @@
-import 'package:meta/meta.dart';
-
 /// Underline rendering style for terminal text set via SGR sequences.
 enum UnderlineStyle {
   none(0),
@@ -9,15 +7,17 @@ enum UnderlineStyle {
   dotted(4),
   dashed(5);
 
+  final int _nativeValue;
+
+  const UnderlineStyle(this._nativeValue);
+}
+
+extension UnderlineStyleNative on UnderlineStyle {
   static final _nativeMap = {
-    for (final style in values) style.nativeValue: style,
+    for (final style in UnderlineStyle.values) style._nativeValue: style,
   };
 
-  @internal
-  final int nativeValue;
+  int get nativeValue => _nativeValue;
 
-  const UnderlineStyle(this.nativeValue);
-
-  @internal
   static UnderlineStyle fromNative(int value) => _nativeMap[value] ?? .none;
 }

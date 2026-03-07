@@ -42,7 +42,7 @@ SgrAttribute _convertAttribute(RawSgrAttribute attr) {
 }
 
 SgrAttribute _convertUnderline(RawSgrAttribute attr) {
-  final style = UnderlineStyle.fromNative(attr.underlineStyle);
+  final style = UnderlineStyleNative.fromNative(attr.underlineStyle);
   return style == UnderlineStyle.none
       ? const SgrResetUnderline()
       : SgrUnderline(style);

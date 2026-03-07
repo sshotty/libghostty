@@ -1,5 +1,3 @@
-import 'package:meta/meta.dart';
-
 /// Base exception for all errors originating from libghostty.
 ///
 /// ```dart
@@ -71,26 +69,3 @@ class DisposedException extends LibGhosttyException {
   const DisposedException(this.typeName)
     : super('$typeName has been disposed and can no longer be used.');
 }
-
-@internal
-Never throwResult(int result) {
-  switch (result) {
-    case _outOfMemory:
-      throw const OutOfMemoryException();
-    case _invalidValue:
-      throw const InvalidValueException();
-    default:
-      throw StateError('Unknown error code: $result');
-  }
-}
-
-@internal
-void checkResult(int result) {
-  if (result != _success) {
-    throwResult(result);
-  }
-}
-
-const _success = 0;
-const _outOfMemory = -1;
-const _invalidValue = -2;

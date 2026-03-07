@@ -162,15 +162,18 @@ enum CellWidth {
   /// Placeholder before a wide character (used during reflow).
   spacerHead(3);
 
-  static final _nativeMap = {for (final w in values) w.nativeValue: w};
+  static final _nativeMap = {for (final w in values) w._nativeValue: w};
 
-  @internal
-  final int nativeValue;
+  final int _nativeValue;
 
-  const CellWidth(this.nativeValue);
+  const CellWidth(this._nativeValue);
+}
 
-  @internal
-  static CellWidth fromNative(int value) => _nativeMap[value] ?? .narrow;
+extension CellWidthNative on CellWidth {
+  int get nativeValue => _nativeValue;
+
+  static CellWidth fromNative(int value) =>
+      CellWidth._nativeMap[value] ?? CellWidth.narrow;
 }
 
 /// Semantic content type set by shell integration (OSC 133).
@@ -179,13 +182,16 @@ enum SemanticContent {
   input(1),
   prompt(2);
 
-  static final _nativeMap = {for (final s in values) s.nativeValue: s};
+  static final _nativeMap = {for (final s in values) s._nativeValue: s};
 
-  @internal
-  final int nativeValue;
+  final int _nativeValue;
 
-  const SemanticContent(this.nativeValue);
+  const SemanticContent(this._nativeValue);
+}
 
-  @internal
-  static SemanticContent fromNative(int value) => _nativeMap[value] ?? .output;
+extension SemanticContentNative on SemanticContent {
+  int get nativeValue => _nativeValue;
+
+  static SemanticContent fromNative(int value) =>
+      SemanticContent._nativeMap[value] ?? SemanticContent.output;
 }

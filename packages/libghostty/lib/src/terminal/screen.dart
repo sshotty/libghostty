@@ -1,6 +1,6 @@
 import '../bindings/bindings.dart';
 import '../color.dart';
-import '../enums/underline_style.dart' show UnderlineStyle;
+import '../enums/underline_style.dart';
 import 'cell.dart';
 import 'line.dart';
 
@@ -16,7 +16,7 @@ CellStyle _styleFromFlags(int flags, int underlineStyle) {
     inverse: flags & CellFlags.inverse != 0,
     invisible: flags & CellFlags.invisible != 0,
     overline: flags & CellFlags.overline != 0,
-    underline: UnderlineStyle.fromNative(underlineStyle),
+    underline: UnderlineStyleNative.fromNative(underlineStyle),
   );
 }
 
@@ -222,10 +222,10 @@ extension RawCellsExtension on RawCells {
       content: contentOverride ?? String.fromCharCode(cp),
       foreground: fgColor,
       background: bgColor,
-      style: _styleFromFlags(flags(index), underlineStyle(index)),
-      wide: CellWidth.fromNative(wide(index)),
-      semanticContent: SemanticContent.fromNative(semanticContent(index)),
       underlineColor: ulColor,
+      wide: CellWidthNative.fromNative(wide(index)),
+      style: _styleFromFlags(flags(index), underlineStyle(index)),
+      semanticContent: SemanticContentNative.fromNative(semanticContent(index)),
     );
   }
 }

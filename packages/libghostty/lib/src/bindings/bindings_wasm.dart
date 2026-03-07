@@ -6,7 +6,7 @@ import 'dart:typed_data';
 
 import 'package:web/web.dart' as web;
 
-import '../exceptions.dart';
+import '../result.dart';
 import 'interface.dart';
 
 const _oscChangeWindowTitle = 1;

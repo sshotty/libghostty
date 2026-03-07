@@ -1,4 +1,4 @@
-import 'package:libghostty/input.dart';
+import 'package:libghostty/src/enums/option_as_alt.dart';
 import 'package:test/test.dart';
 
 void main() {

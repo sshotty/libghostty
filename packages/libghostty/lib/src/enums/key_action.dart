@@ -1,5 +1,3 @@
-import 'package:meta/meta.dart';
-
 /// Keyboard key state transition.
 ///
 /// ```dart
@@ -10,15 +8,17 @@ enum KeyAction {
   press(1),
   repeat(2);
 
-  @internal
-  final int nativeValue;
+  final int _nativeValue;
 
-  const KeyAction(this.nativeValue);
+  const KeyAction(this._nativeValue);
+}
 
-  @internal
+extension KeyActionNative on KeyAction {
+  int get nativeValue => _nativeValue;
+
   static KeyAction fromNative(int value) {
     return KeyAction.values.firstWhere(
-      (e) => e.nativeValue == value,
+      (e) => e._nativeValue == value,
       orElse: () => KeyAction.press,
     );
   }

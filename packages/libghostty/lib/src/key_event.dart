@@ -31,7 +31,7 @@ class KeyEvent extends Disposable {
 
   KeyAction get action {
     ensureNotDisposed();
-    return KeyAction.fromNative(bindings.keyEventGetAction(_handle));
+    return KeyActionNative.fromNative(bindings.keyEventGetAction(_handle));
   }
 
   set action(KeyAction value) {
@@ -63,7 +63,7 @@ class KeyEvent extends Disposable {
 
   Key get key {
     ensureNotDisposed();
-    return Key.fromNative(bindings.keyEventGetKey(_handle));
+    return KeyNative.fromNative(bindings.keyEventGetKey(_handle));
   }
 
   set key(Key value) {

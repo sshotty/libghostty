@@ -2,6 +2,7 @@
 library;
 
 import 'package:libghostty/libghostty.dart';
+import 'package:libghostty/src/terminal/cell.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -180,26 +181,26 @@ void main() {
 
   group('CellWidth', () {
     test('fromNative maps all values', () {
-      expect(CellWidth.fromNative(0), CellWidth.narrow);
-      expect(CellWidth.fromNative(1), CellWidth.wide);
-      expect(CellWidth.fromNative(2), CellWidth.spacerTail);
-      expect(CellWidth.fromNative(3), CellWidth.spacerHead);
+      expect(CellWidthNative.fromNative(0), CellWidth.narrow);
+      expect(CellWidthNative.fromNative(1), CellWidth.wide);
+      expect(CellWidthNative.fromNative(2), CellWidth.spacerTail);
+      expect(CellWidthNative.fromNative(3), CellWidth.spacerHead);
     });
 
     test('fromNative defaults to narrow for unknown', () {
-      expect(CellWidth.fromNative(99), CellWidth.narrow);
+      expect(CellWidthNative.fromNative(99), CellWidth.narrow);
     });
   });
 
   group('SemanticContent', () {
     test('fromNative maps all values', () {
-      expect(SemanticContent.fromNative(0), SemanticContent.output);
-      expect(SemanticContent.fromNative(1), SemanticContent.input);
-      expect(SemanticContent.fromNative(2), SemanticContent.prompt);
+      expect(SemanticContentNative.fromNative(0), SemanticContent.output);
+      expect(SemanticContentNative.fromNative(1), SemanticContent.input);
+      expect(SemanticContentNative.fromNative(2), SemanticContent.prompt);
     });
 
     test('fromNative defaults to output for unknown', () {
-      expect(SemanticContent.fromNative(99), SemanticContent.output);
+      expect(SemanticContentNative.fromNative(99), SemanticContent.output);
     });
   });
 }

@@ -8,12 +8,13 @@ import 'mouse.dart';
 /// ```dart
 /// terminal.onEvent.listen((event) {
 ///   switch (event) {
-///     case BellReceived():    playBeep();
-///     case TitleChanged(:final title): setWindowTitle(title);
-///     case CursorChanged(:final cursor): updateCursor(cursor);
-///     case MouseShapeChanged(:final shape): setCursor(shape);
-///     case ResponseReceived(:final response): sendToPty(response);
-///     case ScreenChanged():   scheduleRepaint();
+///     case BellReceived():                    playBeep();
+///     case TitleChanged(:final title):         setWindowTitle(title);
+///     case CursorChanged(:final cursor):       updateCursor(cursor);
+///     case MouseShapeChanged(:final shape):    setCursor(shape);
+///     case ModeChanged():                      syncModes();
+///     case ResponseReceived(:final response):  sendToPty(response);
+///     case ScreenChanged():                    scheduleRepaint();
 ///   }
 /// });
 /// ```

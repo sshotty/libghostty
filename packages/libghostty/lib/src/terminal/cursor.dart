@@ -48,14 +48,17 @@ enum CursorShape {
   blockHollow(3);
 
   static final _nativeMap = {
-    for (final shape in values) shape.nativeValue: shape,
+    for (final shape in values) shape._nativeValue: shape,
   };
 
-  @internal
-  final int nativeValue;
+  final int _nativeValue;
 
-  const CursorShape(this.nativeValue);
+  const CursorShape(this._nativeValue);
+}
 
-  @internal
-  static CursorShape fromNative(int value) => _nativeMap[value] ?? .block;
+extension CursorShapeNative on CursorShape {
+  int get nativeValue => _nativeValue;
+
+  static CursorShape fromNative(int value) =>
+      CursorShape._nativeMap[value] ?? CursorShape.block;
 }

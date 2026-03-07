@@ -1,5 +1,3 @@
-import 'package:meta/meta.dart';
-
 /// Mouse pointer shape set by the terminal application via OSC 22.
 ///
 /// Values follow the W3C CSS cursor specification.
@@ -44,16 +42,19 @@ enum MouseShape {
   zoomOut(33);
 
   static final _nativeMap = {
-    for (final shape in values) shape.nativeValue: shape,
+    for (final shape in values) shape._nativeValue: shape,
   };
 
-  @internal
-  final int nativeValue;
+  final int _nativeValue;
 
-  const MouseShape(this.nativeValue);
+  const MouseShape(this._nativeValue);
+}
 
-  @internal
-  static MouseShape fromNative(int value) => _nativeMap[value] ?? .text;
+extension MouseShapeNative on MouseShape {
+  int get nativeValue => _nativeValue;
+
+  static MouseShape fromNative(int value) =>
+      MouseShape._nativeMap[value] ?? MouseShape.text;
 }
 
 /// Mouse tracking mode activated by DECSET escape sequences.

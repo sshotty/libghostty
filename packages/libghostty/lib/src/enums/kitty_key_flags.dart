@@ -6,10 +6,10 @@ import 'package:meta/meta.dart';
 /// keyboard protocol.
 ///
 /// ```dart
-/// final flags = KittyKeyFlags.disambiguate | KittyKeyFlags.reportEvents;
+/// final flags =
+///     KittyKeyFlags.disambiguate | KittyKeyFlags.reportEvents;
 /// print(flags.isDisabled); // false
 /// ```
-// Wraps the native GhosttyKittyKeyFlags type.
 @immutable
 final class KittyKeyFlags {
   static const disabled = KittyKeyFlags(0);
@@ -20,23 +20,26 @@ final class KittyKeyFlags {
   static const reportAssociated = KittyKeyFlags(1 << 4);
   static const all = KittyKeyFlags(0x1F);
 
-  @internal
-  final int value;
+  final int _value;
 
-  const KittyKeyFlags(this.value);
+  const KittyKeyFlags(this._value);
 
   @override
-  int get hashCode => value.hashCode;
+  int get hashCode => _value.hashCode;
 
-  bool get isDisabled => value == 0;
+  bool get isDisabled => _value == 0;
 
   @override
   bool operator ==(Object other) =>
-      other is KittyKeyFlags && other.value == value;
-
-  @override
-  String toString() => 'KittyKeyFlags(0x${value.toRadixString(16)})';
+      other is KittyKeyFlags && other._value == _value;
 
   KittyKeyFlags operator |(KittyKeyFlags other) =>
-      KittyKeyFlags(value | other.value);
+      KittyKeyFlags(_value | other._value);
+
+  @override
+  String toString() => 'KittyKeyFlags(0x${_value.toRadixString(16)})';
+}
+
+extension KittyKeyFlagsNative on KittyKeyFlags {
+  int get value => _value;
 }

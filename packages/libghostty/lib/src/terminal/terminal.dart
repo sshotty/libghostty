@@ -184,15 +184,17 @@ class Terminal extends Disposable {
     }
 
     if (flags & TerminalEventFlag.mouseShapeChanged != 0) {
-      _lastMouseShape = MouseShape.fromNative(
+      _lastMouseShape = MouseShapeNative.fromNative(
         bindings.terminalGetMouseShape(_handle),
       );
       _onEvent.add(MouseShapeChanged(_lastMouseShape));
     }
 
     if (flags & TerminalEventFlag.hasResponse != 0) {
-      final response = bindings.terminalReadResponse(_handle);
-      if (response != null) _onEvent.add(ResponseReceived(response));
+      Uint8List? response;
+      while ((response = bindings.terminalReadResponse(_handle)) != null) {
+        _onEvent.add(ResponseReceived(response!));
+      }
     }
 
     if (flags & TerminalEventFlag.modeChanged != 0) {
@@ -216,7 +218,9 @@ class Terminal extends Disposable {
       col: bindings.renderStateGetCursorX(_handle),
       row: bindings.renderStateGetCursorY(_handle),
       visible: bindings.renderStateGetCursorVisible(_handle),
-      shape: .fromNative(bindings.renderStateGetCursorStyle(_handle)),
+      shape: CursorShapeNative.fromNative(
+        bindings.renderStateGetCursorStyle(_handle),
+      ),
     );
   }
 

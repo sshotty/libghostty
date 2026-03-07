@@ -1,5 +1,3 @@
-import 'package:meta/meta.dart';
-
 /// Physical key codes for layout-independent keyboard input.
 ///
 /// Based on the W3C UI Events KeyboardEvent code standard. Each value
@@ -188,10 +186,12 @@ enum Key {
   cut,
   paste;
 
-  @internal
-  int get nativeValue => index;
+  int get _nativeValue => index;
+}
 
-  @internal
+extension KeyNative on Key {
+  int get nativeValue => _nativeValue;
+
   static Key fromNative(int value) {
     if (value >= 0 && value < Key.values.length) {
       return Key.values[value];

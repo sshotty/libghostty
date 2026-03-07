@@ -1,5 +1,3 @@
-import 'package:meta/meta.dart';
-
 /// macOS Option key behavior for terminal input.
 ///
 /// Controls whether the macOS Option key is treated as Alt for keyboard
@@ -24,8 +22,11 @@ enum OptionAsAlt {
   /// Only the right Option key is treated as Alt.
   right(3);
 
-  @internal
-  final int nativeValue;
+  final int _nativeValue;
 
-  const OptionAsAlt(this.nativeValue);
+  const OptionAsAlt(this._nativeValue);
+}
+
+extension OptionAsAltNative on OptionAsAlt {
+  int get nativeValue => _nativeValue;
 }

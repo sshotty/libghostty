@@ -47,7 +47,7 @@ class OscParser extends Disposable {
     ensureNotDisposed();
     final result = bindings.oscEnd(_handle, terminator);
     return OscCommand(
-      type: OscCommandType.fromNative(result.commandType),
+      type: OscCommandTypeNative.fromNative(result.commandType),
       windowTitle: result.windowTitle,
     );
   }
