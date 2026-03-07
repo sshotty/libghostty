@@ -1,10 +1,6 @@
-/// Mouse tracking mode activated by DECSET escape sequences.
-enum MouseEvent { none, x10, normal, button, any }
-
 /// Mouse pointer shape set by the terminal application via OSC 22.
 ///
-/// Values follow the W3C CSS cursor specification and map 1:1 to the native
-/// `MouseShape` enum in libghostty-vt.
+/// Values follow the W3C CSS cursor specification.
 ///
 /// ```dart
 /// final shape = terminal.mouseShape; // MouseShape.text by default
@@ -46,14 +42,35 @@ enum MouseShape {
   zoomOut(33);
 
   static final _nativeMap = {
-    for (final shape in values) shape.nativeValue: shape,
+    for (final shape in values) shape._nativeValue: shape,
   };
 
-  final int nativeValue;
+  final int _nativeValue;
 
-  const MouseShape(this.nativeValue);
+  const MouseShape(this._nativeValue);
+}
 
-  static MouseShape fromNative(int value) {
-    return _nativeMap[value] ?? MouseShape.text;
-  }
+extension MouseShapeNative on MouseShape {
+  int get nativeValue => _nativeValue;
+
+  static MouseShape fromNative(int value) =>
+      MouseShape._nativeMap[value] ?? MouseShape.text;
+}
+
+/// Mouse tracking mode activated by DECSET escape sequences.
+enum MouseTracking {
+  /// No mouse events reported.
+  none,
+
+  /// Click events only, no modifiers (DECSET 9).
+  x10,
+
+  /// Click and release events with modifiers (DECSET 1000).
+  normal,
+
+  /// Click, release, and drag events with modifiers (DECSET 1002).
+  button,
+
+  /// All mouse events including motion (DECSET 1003).
+  any,
 }

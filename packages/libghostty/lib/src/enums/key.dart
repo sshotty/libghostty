@@ -6,12 +6,8 @@
 /// platform.
 ///
 /// ```dart
-/// final key = Key.fromNative(event.keyCode);
-/// if (key == Key.enter) {
-///   print('Enter pressed');
-/// }
+/// event.key = Key.enter;
 /// ```
-// Maps 1:1 with the native GhosttyKey enum.
 enum Key {
   unidentified,
   backquote,
@@ -190,7 +186,11 @@ enum Key {
   cut,
   paste;
 
-  int get nativeValue => index;
+  int get _nativeValue => index;
+}
+
+extension KeyNative on Key {
+  int get nativeValue => _nativeValue;
 
   static Key fromNative(int value) {
     if (value >= 0 && value < Key.values.length) {

@@ -1,4 +1,4 @@
-import 'package:libghostty/input.dart';
+import 'package:libghostty/src/enums/option_as_alt.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -7,13 +7,6 @@ void main() {
       for (final option in OptionAsAlt.values) {
         expect(option.nativeValue, option.index);
       }
-    });
-
-    test('expected values at expected indices', () {
-      expect(OptionAsAlt.none.nativeValue, 0);
-      expect(OptionAsAlt.both.nativeValue, 1);
-      expect(OptionAsAlt.left.nativeValue, 2);
-      expect(OptionAsAlt.right.nativeValue, 3);
     });
   });
 }

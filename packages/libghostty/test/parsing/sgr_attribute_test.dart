@@ -3,20 +3,10 @@ import 'package:test/test.dart';
 
 void main() {
   group('SgrAttribute', () {
-    test('SgrUnset is a valid subtype', () {
-      const SgrAttribute attr = SgrUnset();
-      expect(attr, isA<SgrUnset>());
-    });
-
     test('SgrUnknown stores parameters', () {
       const attr = SgrUnknown([1, 2], [3]);
       expect(attr.fullParams, [1, 2]);
       expect(attr.partialParams, [3]);
-    });
-
-    test('SgrBold is a valid subtype', () {
-      const SgrAttribute attr = SgrBold();
-      expect(attr, isA<SgrBold>());
     });
 
     test('SgrForegroundRgb stores color', () {

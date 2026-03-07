@@ -42,12 +42,12 @@ void main() {
       final cells = bindings.renderStateGetViewport(handle, 80, 24);
       expect(cells.length, 80 * 24);
 
-      expect(cells[0].codepoint, 'H'.codeUnitAt(0));
-      expect(cells[1].codepoint, 'e'.codeUnitAt(0));
-      expect(cells[2].codepoint, 'l'.codeUnitAt(0));
-      expect(cells[3].codepoint, 'l'.codeUnitAt(0));
-      expect(cells[4].codepoint, 'o'.codeUnitAt(0));
-      expect(cells[5].codepoint, 0);
+      expect(cells.codepoint(0), 'H'.codeUnitAt(0));
+      expect(cells.codepoint(1), 'e'.codeUnitAt(0));
+      expect(cells.codepoint(2), 'l'.codeUnitAt(0));
+      expect(cells.codepoint(3), 'l'.codeUnitAt(0));
+      expect(cells.codepoint(4), 'o'.codeUnitAt(0));
+      expect(cells.codepoint(5), 0);
     });
 
     test('cursor moves after write', () {
@@ -62,6 +62,23 @@ void main() {
       bindings.renderStateUpdate(handle);
       expect(bindings.renderStateGetCols(handle), 40);
       expect(bindings.renderStateGetRows(handle), 10);
+    });
+
+    test('write returns event flags', () {
+      final events = bindings.terminalWrite(handle, .fromList('Hi'.codeUnits));
+      expect(events & TerminalEventFlag.repaint, isNonZero);
+      expect(events & TerminalEventFlag.bell, isZero);
+    });
+
+    test('write returns bell event flag', () {
+      final events = bindings.terminalWrite(handle, .fromList([0x07]));
+      expect(events & TerminalEventFlag.bell, isNonZero);
+    });
+
+    test('write returns title event flag', () {
+      const osc = '\x1b]0;Test\x07';
+      final events = bindings.terminalWrite(handle, .fromList(osc.codeUnits));
+      expect(events & TerminalEventFlag.titleChanged, isNonZero);
     });
 
     test('bell count incremented by BEL character', () {
@@ -96,8 +113,8 @@ void main() {
       bindings.terminalWrite(handle, Uint8List.fromList(boldHello.codeUnits));
       bindings.renderStateUpdate(handle);
       final cells = bindings.renderStateGetViewport(handle, 80, 24);
-      expect(cells[0].flags & 1, 1);
-      expect(cells[0].codepoint, 'H'.codeUnitAt(0));
+      expect(cells.flags(0) & 1, 1);
+      expect(cells.codepoint(0), 'H'.codeUnitAt(0));
     });
 
     test('create with config sets colors', () {
@@ -156,7 +173,7 @@ void main() {
         final line = bindings.terminalGetScrollbackLine(handle, 0, 80);
         expect(line, isNotNull);
         expect(line!.length, 80);
-        expect(line[0].codepoint, 'L'.codeUnitAt(0));
+        expect(line.codepoint(0), 'L'.codeUnitAt(0));
       }
     });
   });

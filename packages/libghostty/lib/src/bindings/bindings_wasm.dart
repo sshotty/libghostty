@@ -6,7 +6,7 @@ import 'dart:typed_data';
 
 import 'package:web/web.dart' as web;
 
-import '../exceptions.dart';
+import '../result.dart';
 import 'interface.dart';
 
 const _oscChangeWindowTitle = 1;
@@ -386,10 +386,10 @@ class WasmBindings implements GhosttyBindings {
       _fn.call1('ghostty_render_state_get_rows', handle);
 
   @override
-  List<RawCell> renderStateGetViewport(int handle, int cols, int rows) {
+  RawCells renderStateGetViewport(int handle, int cols, int rows) {
     final totalCells = cols * rows;
-    if (totalCells == 0) return const [];
-    final bufSize = totalCells * 16;
+    if (totalCells == 0) return RawCells.empty;
+    final bufSize = totalCells * RawCells.bytesPerCell;
     final buf = _fn.call1('ghostty_wasm_alloc_u8_array', bufSize);
     try {
       final count = _fn.call3(
@@ -398,8 +398,8 @@ class WasmBindings implements GhosttyBindings {
         buf,
         totalCells,
       );
-      if (count < 0) return const [];
-      return [for (var i = 0; i < count; i++) _readCell(buf + i * 16)];
+      if (count < 0) return RawCells.empty;
+      return _readCells(buf, count);
     } finally {
       _fn.void2('ghostty_wasm_free_u8_array', buf, bufSize);
     }
@@ -498,13 +498,21 @@ class WasmBindings implements GhosttyBindings {
       _fn.call1('ghostty_terminal_get_mouse_shape', handle);
 
   @override
+  int terminalGetModes(int handle) =>
+      _fn.call1('ghostty_terminal_get_modes', handle);
+
+  @override
+  int terminalGetPaletteColor(int handle, int index) =>
+      _fn.call2('ghostty_terminal_get_palette_color', handle, index);
+
+  @override
   int terminalGetScrollbackLength(int handle) =>
       _fn.call1('ghostty_terminal_get_scrollback_length', handle);
 
   @override
-  List<RawCell>? terminalGetScrollbackLine(int handle, int offset, int cols) {
+  RawCells? terminalGetScrollbackLine(int handle, int offset, int cols) {
     if (cols <= 0) return null;
-    final bufSize = cols * 16;
+    final bufSize = cols * RawCells.bytesPerCell;
     final buf = _fn.call1('ghostty_wasm_alloc_u8_array', bufSize);
     try {
       final count = _fn.call4(
@@ -515,7 +523,7 @@ class WasmBindings implements GhosttyBindings {
         cols,
       );
       if (count < 0) return null;
-      return [for (var i = 0; i < count; i++) _readCell(buf + i * 16)];
+      return _readCells(buf, count);
     } finally {
       _fn.void2('ghostty_wasm_free_u8_array', buf, bufSize);
     }
@@ -558,8 +566,9 @@ class WasmBindings implements GhosttyBindings {
   @override
   int terminalNewWithConfig(int cols, int rows, RawTerminalConfig config) {
     _applyFreshInstanceIfReady();
+    const cfgSize = 84;
     final outPtr = _fn.call0('ghostty_wasm_alloc_opaque');
-    final cfgPtr = _fn.call1('ghostty_wasm_alloc_u8_array', 16);
+    final cfgPtr = _fn.call1('ghostty_wasm_alloc_u8_array', cfgSize);
     try {
       _mem.writeU32(cfgPtr, config.scrollbackLimit);
       _mem.writeU8(cfgPtr + 4, config.fgR);
@@ -574,6 +583,15 @@ class WasmBindings implements GhosttyBindings {
       _mem.writeU8(cfgPtr + 13, config.cursorG);
       _mem.writeU8(cfgPtr + 14, config.cursorB);
       _mem.writeU8(cfgPtr + 15, config.cursorSet ? 1 : 0);
+      var paletteBitmask = 0;
+      for (var i = 0; i < config.palette.length && i < 16; i++) {
+        final rgb = config.palette[i];
+        if (rgb != null) {
+          _mem.writeU32(cfgPtr + 16 + i * 4, rgb);
+          paletteBitmask |= 1 << i;
+        }
+      }
+      _mem.writeU16(cfgPtr + 80, paletteBitmask);
       checkResult(
         _fn.callN('ghostty_terminal_new_with_config', [
           0,
@@ -587,7 +605,7 @@ class WasmBindings implements GhosttyBindings {
       return _mem.readPtr(outPtr);
     } finally {
       _fn.void1('ghostty_wasm_free_opaque', outPtr);
-      _fn.void2('ghostty_wasm_free_u8_array', cfgPtr, 16);
+      _fn.void2('ghostty_wasm_free_u8_array', cfgPtr, cfgSize);
     }
   }
 
@@ -602,16 +620,66 @@ class WasmBindings implements GhosttyBindings {
   }
 
   @override
-  void terminalWrite(int handle, Uint8List data) {
-    if (data.isEmpty) return;
+  int terminalWrite(int handle, Uint8List data) {
+    if (data.isEmpty) return 0;
     final ptr = _fn.call1('ghostty_wasm_alloc_u8_array', data.length);
     try {
       _mem.writeBytes(ptr, data);
-      _fn.void3('ghostty_terminal_write', handle, ptr, data.length);
+      return _fn.call3('ghostty_terminal_write', handle, ptr, data.length);
     } finally {
       _fn.void2('ghostty_wasm_free_u8_array', ptr, data.length);
     }
   }
+
+  @override
+  bool terminalHasResponse(int handle) =>
+      _fn.call1('ghostty_terminal_has_response', handle) != 0;
+
+  @override
+  Uint8List? terminalReadResponse(int handle) {
+    const bufSize = 4096;
+    final buf = _fn.call1('ghostty_wasm_alloc_u8_array', bufSize);
+    try {
+      final len = _fn.call3(
+        'ghostty_terminal_read_response',
+        handle,
+        buf,
+        bufSize,
+      );
+      if (len <= 0) return null;
+      return Uint8List.fromList(_mem.readBytes(buf, len));
+    } finally {
+      _fn.void2('ghostty_wasm_free_u8_array', buf, bufSize);
+    }
+  }
+
+  @override
+  bool renderStateIsRowWrapped(int handle, int row) =>
+      _fn.call2('ghostty_render_state_is_row_wrapped', handle, row) != 0;
+
+  @override
+  List<int> terminalGetScrollbackGrapheme(int handle, int offset, int col) {
+    const bufBytes = 32 * 4;
+    final buf = _fn.call1('ghostty_wasm_alloc_u8_array', bufBytes);
+    try {
+      final count = _fn.callN('ghostty_terminal_get_scrollback_grapheme', [
+        handle,
+        offset,
+        col,
+        buf,
+        32,
+      ]);
+      if (count <= 0) return const [];
+      return [for (var i = 0; i < count; i++) _mem.readU32(buf + i * 4)];
+    } finally {
+      _fn.void2('ghostty_wasm_free_u8_array', buf, bufBytes);
+    }
+  }
+
+  @override
+  bool terminalIsScrollbackRowWrapped(int handle, int offset) =>
+      _fn.call2('ghostty_terminal_is_scrollback_row_wrapped', handle, offset) !=
+      0;
 
   void _applyFreshInstanceIfReady() {
     if (_activeTerminals > 0) return;
@@ -655,19 +723,12 @@ class WasmBindings implements GhosttyBindings {
     return results;
   }
 
-  RawCell _readCell(int addr) => RawCell(
-    codepoint: _mem.readU32(addr),
-    fgR: _mem.readU8(addr + 4),
-    fgG: _mem.readU8(addr + 5),
-    fgB: _mem.readU8(addr + 6),
-    bgR: _mem.readU8(addr + 7),
-    bgG: _mem.readU8(addr + 8),
-    bgB: _mem.readU8(addr + 9),
-    flags: _mem.readU8(addr + 10),
-    width: _mem.readU8(addr + 11),
-    underlineStyle: _mem.readU8(addr + 12),
-    graphemeLen: _mem.readU8(addr + 13),
-  );
+  RawCells _readCells(int addr, int count) {
+    if (count <= 0) return RawCells.empty;
+    final byteCount = count * RawCells.bytesPerCell;
+    final bytes = Uint8List.fromList(_mem.readBytes(addr, byteCount));
+    return RawCells(ByteData.sublistView(bytes), count);
+  }
 
   RawSgrAttribute _readSgrAttribute(int attrPtr) {
     final tag = _fn.call1('ghostty_sgr_attribute_tag', attrPtr);

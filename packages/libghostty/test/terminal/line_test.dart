@@ -68,21 +68,13 @@ void main() {
         expect(line.cellAt(2), const Cell(content: 'C'));
       });
 
-      test('returns Cell.empty for negative index', () {
+      test('returns Cell.empty for out-of-bounds index', () {
         const line = Line([Cell(content: 'A')]);
         expect(line.cellAt(-1), Cell.empty);
         expect(line.cellAt(-100), Cell.empty);
-      });
-
-      test('returns Cell.empty for index >= length', () {
-        const line = Line([Cell(content: 'A'), Cell(content: 'B')]);
-        expect(line.cellAt(2), Cell.empty);
+        expect(line.cellAt(1), Cell.empty);
         expect(line.cellAt(100), Cell.empty);
-      });
-
-      test('returns Cell.empty for empty line', () {
-        const line = Line([]);
-        expect(line.cellAt(0), Cell.empty);
+        expect(const Line([]).cellAt(0), Cell.empty);
       });
     });
   });

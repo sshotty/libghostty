@@ -12,23 +12,21 @@ class Cell {
   final String content;
   final CellColor foreground;
   final CellColor background;
-  final CellColor? underlineColor;
   final CellStyle style;
+  final CellWidth wide;
+  final SemanticContent semanticContent;
 
-  /// OSC 8 hyperlink URI, if any.
-  final String? hyperlink;
-
-  /// True for characters that occupy two columns (e.g. CJK).
-  final bool isWide;
+  /// Explicit underline color set by the application, or null for default.
+  final CellColor? underlineColor;
 
   const Cell({
     this.content = '',
     this.foreground = const DefaultColor(),
     this.background = const DefaultColor(),
-    this.underlineColor,
     this.style = const CellStyle(),
-    this.hyperlink,
-    this.isWide = false,
+    this.wide = CellWidth.narrow,
+    this.semanticContent = SemanticContent.output,
+    this.underlineColor,
   });
 
   @override
@@ -36,13 +34,16 @@ class Cell {
     content,
     foreground,
     background,
-    underlineColor,
     style,
-    hyperlink,
-    isWide,
+    wide,
+    semanticContent,
+    underlineColor,
   );
 
   bool get isEmpty => content.isEmpty;
+
+  /// True for characters that occupy two columns (e.g. CJK).
+  bool get isWide => wide == CellWidth.wide;
 
   @override
   bool operator ==(Object other) =>
@@ -50,10 +51,10 @@ class Cell {
       other.content == content &&
       other.foreground == foreground &&
       other.background == background &&
-      other.underlineColor == underlineColor &&
       other.style == style &&
-      other.hyperlink == hyperlink &&
-      other.isWide == isWide;
+      other.wide == wide &&
+      other.semanticContent == semanticContent &&
+      other.underlineColor == underlineColor;
 
   @override
   String toString() => 'Cell($content)';
@@ -148,4 +149,49 @@ class CellStyle {
     if (underline != UnderlineStyle.none) flags.add('underline: $underline');
     return 'CellStyle(${flags.join(', ')})';
   }
+}
+
+/// How a cell participates in wide-character rendering.
+enum CellWidth {
+  narrow(0),
+  wide(1),
+
+  /// Placeholder after a wide character.
+  spacerTail(2),
+
+  /// Placeholder before a wide character (used during reflow).
+  spacerHead(3);
+
+  static final _nativeMap = {for (final w in values) w._nativeValue: w};
+
+  final int _nativeValue;
+
+  const CellWidth(this._nativeValue);
+}
+
+extension CellWidthNative on CellWidth {
+  int get nativeValue => _nativeValue;
+
+  static CellWidth fromNative(int value) =>
+      CellWidth._nativeMap[value] ?? CellWidth.narrow;
+}
+
+/// Semantic content type set by shell integration (OSC 133).
+enum SemanticContent {
+  output(0),
+  input(1),
+  prompt(2);
+
+  static final _nativeMap = {for (final s in values) s._nativeValue: s};
+
+  final int _nativeValue;
+
+  const SemanticContent(this._nativeValue);
+}
+
+extension SemanticContentNative on SemanticContent {
+  int get nativeValue => _nativeValue;
+
+  static SemanticContent fromNative(int value) =>
+      SemanticContent._nativeMap[value] ?? SemanticContent.output;
 }

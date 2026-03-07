@@ -96,30 +96,38 @@ void main() {
     });
 
     group('events', () {
-      test('onBell fires', () {
+      test('BellReceived fires', () {
         var bellCount = 0;
-        terminal.onBell.listen((_) => bellCount++);
+        terminal.onEvent.listen((e) {
+          if (e is BellReceived) bellCount++;
+        });
         terminal.write(Uint8List.fromList([0x07]));
         expect(bellCount, 1);
       });
 
-      test('onTitleChanged fires', () {
-        String? title;
-        terminal.onTitleChanged.listen((t) => title = t);
+      test('TitleChanged fires', () {
+        String? received;
+        terminal.onEvent.listen((e) {
+          if (e case TitleChanged(:final title)) received = title;
+        });
         terminal.write(Uint8List.fromList('\x1b]0;Test Title\x07'.codeUnits));
-        expect(title, 'Test Title');
+        expect(received, 'Test Title');
       });
 
-      test('onScreenChanged fires on write', () {
+      test('ScreenChanged fires on write', () {
         var changeCount = 0;
-        terminal.onScreenChanged.listen((_) => changeCount++);
+        terminal.onEvent.listen((e) {
+          if (e is ScreenChanged) changeCount++;
+        });
         terminal.write(Uint8List.fromList('A'.codeUnits));
         expect(changeCount, greaterThan(0));
       });
 
-      test('onScreenChanged fires on resize', () {
+      test('ScreenChanged fires on resize', () {
         var changeCount = 0;
-        terminal.onScreenChanged.listen((_) => changeCount++);
+        terminal.onEvent.listen((e) {
+          if (e is ScreenChanged) changeCount++;
+        });
         terminal.resize(cols: 120, rows: 40);
         expect(changeCount, 1);
       });

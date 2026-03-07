@@ -1,38 +1,17 @@
-import 'package:libghostty/parsing.dart';
+import 'package:libghostty/src/enums/osc_command_type.dart';
 import 'package:test/test.dart';
 
 void main() {
   group('OscCommandType', () {
     test('fromNative round-trips for all values', () {
       for (final type in OscCommandType.values) {
-        expect(OscCommandType.fromNative(type.index), type);
+        expect(OscCommandTypeNative.fromNative(type.nativeValue), type);
       }
     });
 
-    test('fromNative returns invalid for negative value', () {
-      expect(OscCommandType.fromNative(-1), OscCommandType.invalid);
-    });
-
-    test('fromNative returns invalid for out-of-bounds value', () {
-      expect(
-        OscCommandType.fromNative(OscCommandType.values.length),
-        OscCommandType.invalid,
-      );
-      expect(OscCommandType.fromNative(999), OscCommandType.invalid);
-    });
-
-    test('expected values at expected indices', () {
-      expect(OscCommandType.fromNative(0), OscCommandType.invalid);
-      expect(OscCommandType.fromNative(1), OscCommandType.changeWindowTitle);
-      expect(OscCommandType.fromNative(2), OscCommandType.changeWindowIcon);
-    });
-
-    test('last value is at expected index', () {
-      final lastIndex = OscCommandType.values.length - 1;
-      expect(
-        OscCommandType.fromNative(lastIndex),
-        OscCommandType.kittyTextSizing,
-      );
+    test('fromNative returns invalid for out-of-bounds values', () {
+      expect(OscCommandTypeNative.fromNative(-1), OscCommandType.invalid);
+      expect(OscCommandTypeNative.fromNative(999), OscCommandType.invalid);
     });
   });
 }

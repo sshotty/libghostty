@@ -151,8 +151,7 @@ class TerminalRenderBox extends RenderBox {
 
   set terminal(Terminal value) {
     if (_terminal == value) return;
-    _screenSub?.cancel().ignore();
-    _cursorSub?.cancel().ignore();
+    _eventSub?.cancel().ignore();
     _terminal = value;
     _setupSubscriptions();
     _cache.markAllDirty();
@@ -219,8 +218,7 @@ class TerminalRenderBox extends RenderBox {
   final _cursorPaint = Paint();
   final _selectionPaint = Paint();
 
-  StreamSubscription<void>? _screenSub;
-  StreamSubscription<Cursor>? _cursorSub;
+  StreamSubscription<TerminalEvent>? _eventSub;
 
   @override
   void attach(PipelineOwner owner) {
@@ -249,8 +247,7 @@ class TerminalRenderBox extends RenderBox {
 
   @override
   void detach() {
-    _screenSub?.cancel().ignore();
-    _cursorSub?.cancel().ignore();
+    _eventSub?.cancel().ignore();
     _blinkTimer?.cancel();
     _cache.dispose();
     super.detach();
@@ -603,8 +600,16 @@ class TerminalRenderBox extends RenderBox {
   }
 
   void _setupSubscriptions() {
-    _screenSub = _terminal.onScreenChanged.listen((_) => _onTerminalChanged());
-    _cursorSub = _terminal.onCursorChanged.listen((_) => markNeedsPaint());
+    _eventSub = _terminal.onEvent.listen((event) {
+      switch (event) {
+        case ScreenChanged():
+          _onTerminalChanged();
+        case CursorChanged():
+          markNeedsPaint();
+        default:
+          break;
+      }
+    });
   }
 
   void _setupBlinkTimer() {

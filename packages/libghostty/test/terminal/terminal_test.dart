@@ -1,6 +1,8 @@
 @Tags(['ffi'])
 library;
 
+import 'dart:typed_data';
+
 import 'package:libghostty/libghostty.dart';
 import 'package:test/test.dart';
 
@@ -84,35 +86,35 @@ void main() {
 
       group('mouseTracking', () {
         test('default is none', () {
-          expect(terminal.modes.mouseEvent, MouseEvent.none);
+          expect(terminal.modes.mouseTracking, MouseTracking.none);
         });
 
         test('DECSET 9 activates x10', () {
           terminal.write(.fromList('\x1b[?9h'.codeUnits));
-          expect(terminal.modes.mouseEvent, MouseEvent.x10);
+          expect(terminal.modes.mouseTracking, MouseTracking.x10);
         });
 
         test('DECSET 1000 activates normal', () {
           terminal.write(.fromList('\x1b[?1000h'.codeUnits));
-          expect(terminal.modes.mouseEvent, MouseEvent.normal);
+          expect(terminal.modes.mouseTracking, MouseTracking.normal);
         });
 
         test('DECSET 1002 activates buttonEvent', () {
           terminal.write(.fromList('\x1b[?1002h'.codeUnits));
-          expect(terminal.modes.mouseEvent, MouseEvent.button);
+          expect(terminal.modes.mouseTracking, MouseTracking.button);
         });
 
         test('DECSET 1003 activates anyEvent', () {
           terminal.write(.fromList('\x1b[?1003h'.codeUnits));
-          expect(terminal.modes.mouseEvent, MouseEvent.any);
+          expect(terminal.modes.mouseTracking, MouseTracking.any);
         });
 
         test('DECRST disables mouse tracking', () {
           terminal.write(.fromList('\x1b[?1000h'.codeUnits));
-          expect(terminal.modes.mouseEvent, MouseEvent.normal);
+          expect(terminal.modes.mouseTracking, MouseTracking.normal);
 
           terminal.write(.fromList('\x1b[?1000l'.codeUnits));
-          expect(terminal.modes.mouseEvent, MouseEvent.none);
+          expect(terminal.modes.mouseTracking, MouseTracking.none);
         });
       });
     });
@@ -188,30 +190,57 @@ void main() {
     });
 
     group('events', () {
-      test('onBell fires', () {
+      test('BellReceived fires', () {
         var bellCount = 0;
-        terminal.onBell.listen((_) => bellCount++);
+        terminal.onEvent.listen((e) {
+          if (e is BellReceived) bellCount++;
+        });
         terminal.write(.fromList([0x07]));
         expect(bellCount, 1);
       });
 
-      test('onTitleChanged fires', () {
-        String? title;
-        terminal.onTitleChanged.listen((t) => title = t);
+      test('TitleChanged fires with title', () {
+        String? received;
+        terminal.onEvent.listen((e) {
+          if (e case TitleChanged(:final title)) received = title;
+        });
         terminal.write(.fromList('\x1b]0;Test Title\x07'.codeUnits));
-        expect(title, 'Test Title');
+        expect(received, 'Test Title');
       });
 
-      test('onScreenChanged fires on write', () {
+      test('MouseShapeChanged fires', () {
+        MouseShape? received;
+        terminal.onEvent.listen((e) {
+          if (e case MouseShapeChanged(:final shape)) received = shape;
+        });
+        terminal.write(.fromList('\x1b]22;pointer\x1b\\'.codeUnits));
+        expect(received, MouseShape.pointer);
+      });
+
+      test('MouseShapeChanged does not fire when shape unchanged', () {
+        var count = 0;
+        terminal.write(.fromList('\x1b]22;pointer\x1b\\'.codeUnits));
+        terminal.onEvent.listen((e) {
+          if (e is MouseShapeChanged) count++;
+        });
+        terminal.write(.fromList('\x1b]22;pointer\x1b\\'.codeUnits));
+        expect(count, 0);
+      });
+
+      test('ScreenChanged fires on write', () {
         var changeCount = 0;
-        terminal.onScreenChanged.listen((_) => changeCount++);
+        terminal.onEvent.listen((e) {
+          if (e is ScreenChanged) changeCount++;
+        });
         terminal.write(.fromList('A'.codeUnits));
         expect(changeCount, greaterThan(0));
       });
 
-      test('onScreenChanged fires on resize', () {
+      test('ScreenChanged fires on resize', () {
         var changeCount = 0;
-        terminal.onScreenChanged.listen((_) => changeCount++);
+        terminal.onEvent.listen((e) {
+          if (e is ScreenChanged) changeCount++;
+        });
         terminal.resize(cols: 120, rows: 40);
         expect(changeCount, 1);
       });
@@ -447,43 +476,13 @@ void main() {
 
     group('screen', () {
       group('initialization', () {
-        test('fresh terminal has all empty cells', () {
+        test('fresh terminal is clean', () {
           final t = Terminal(cols: 80, rows: 24);
           addTearDown(t.dispose);
           _expectAllCellsEmpty(t);
-        });
-
-        test('fresh terminal has empty scrollback', () {
-          final t = Terminal(cols: 80, rows: 24);
-          addTearDown(t.dispose);
           expect(t.scrollback.length, 0);
-        });
-
-        test('fresh terminal has cursor at origin', () {
-          final t = Terminal(cols: 80, rows: 24);
-          addTearDown(t.dispose);
           expect(t.cursor.row, 0);
           expect(t.cursor.col, 0);
-        });
-
-        test('recreated terminal has all empty cells', () {
-          var t = Terminal(cols: 80, rows: 24);
-          t.write(.fromList('Hello World'.codeUnits));
-          t.dispose();
-
-          t = Terminal(cols: 80, rows: 24);
-          addTearDown(t.dispose);
-          _expectAllCellsEmpty(t);
-        });
-
-        test('recreated terminal has empty scrollback', () {
-          var t = Terminal(cols: 80, rows: 24);
-          t.write(.fromList('Hello\r\nWorld\r\n'.codeUnits));
-          t.dispose();
-
-          t = Terminal(cols: 80, rows: 24);
-          addTearDown(t.dispose);
-          expect(t.scrollback.length, 0);
         });
 
         test('multiple dispose-recreate cycles produce clean screens', () {
@@ -510,28 +509,14 @@ void main() {
       });
 
       group('multi-instance', () {
-        test('two concurrent terminals have independent state', () {
+        test('concurrent terminals have independent state', () {
           final t1 = Terminal(cols: 80, rows: 24);
           addTearDown(t1.dispose);
           final t2 = Terminal(cols: 80, rows: 24);
           addTearDown(t2.dispose);
 
           t1.write(.fromList('Terminal One'.codeUnits));
-          t2.write(.fromList('Terminal Two'.codeUnits));
-
-          expect(t1.screen.cellAt(0, 0).content, 'T');
           expect(t1.screen.cellAt(0, 9).content, 'O');
-          expect(t2.screen.cellAt(0, 0).content, 'T');
-          expect(t2.screen.cellAt(0, 9).content, 'T');
-        });
-
-        test('writing to one terminal does not affect the other', () {
-          final t1 = Terminal(cols: 80, rows: 24);
-          addTearDown(t1.dispose);
-          final t2 = Terminal(cols: 80, rows: 24);
-          addTearDown(t2.dispose);
-
-          t1.write(.fromList('AAAA'.codeUnits));
           _expectAllCellsEmpty(t2);
         });
 
@@ -544,23 +529,97 @@ void main() {
           t1.dispose();
 
           expect(t2.screen.cellAt(0, 0).content, 'S');
-          expect(t2.screen.cellAt(0, 6).content, 'a');
           t2.write(.fromList('\r\nMore data'.codeUnits));
           expect(t2.screen.cellAt(1, 0).content, 'M');
         });
+      });
+    });
 
-        test('new terminal created after dispose has clean screen', () {
-          final t1 = Terminal(cols: 80, rows: 24);
-          t1.write(.fromList('Fill with data'.codeUnits));
-          t1.dispose();
+    group('dirtyState', () {
+      test('writing text produces partial dirty state', () {
+        terminal.clearContentChanges();
+        terminal.write(.fromList('Hello'.codeUnits));
+        expect(terminal.screen.dirtyState, DirtyState.partial);
+      });
 
-          final t2 = Terminal(cols: 80, rows: 24);
-          addTearDown(t2.dispose);
-          _expectAllCellsEmpty(t2);
-          expect(t2.scrollback.length, 0);
-          expect(t2.cursor.row, 0);
-          expect(t2.cursor.col, 0);
+      test('cursor-only move produces clean dirty state', () {
+        terminal.write(.fromList('Hello'.codeUnits));
+        terminal.clearContentChanges();
+        terminal.write(.fromList('\x1b[H'.codeUnits));
+        expect(terminal.screen.dirtyState, DirtyState.clean);
+      });
+
+      test('alternate screen switch produces full dirty state', () {
+        terminal.clearContentChanges();
+        terminal.write(.fromList('\x1b[?1049h'.codeUnits));
+        expect(terminal.screen.dirtyState, DirtyState.full);
+      });
+    });
+
+    group('isRowDirty', () {
+      test('written row is dirty', () {
+        terminal.clearContentChanges();
+        terminal.write(.fromList('Hello'.codeUnits));
+        expect(terminal.screen.isRowDirty(0), isTrue);
+      });
+
+      test('unwritten row is not dirty', () {
+        terminal.clearContentChanges();
+        terminal.write(.fromList('Hello'.codeUnits));
+        expect(terminal.screen.isRowDirty(1), isFalse);
+      });
+
+      test('clearContentChanges resets row dirty flags', () {
+        terminal.write(.fromList('Hello'.codeUnits));
+        terminal.clearContentChanges();
+        expect(terminal.screen.isRowDirty(0), isFalse);
+      });
+
+      test('multiple rows track independently', () {
+        terminal.clearContentChanges();
+        terminal.write(.fromList('Line1\r\nLine2'.codeUnits));
+        expect(terminal.screen.isRowDirty(0), isTrue);
+        expect(terminal.screen.isRowDirty(1), isTrue);
+        expect(terminal.screen.isRowDirty(2), isFalse);
+      });
+
+      test('cursor-only move does not dirty row', () {
+        terminal.write(.fromList('Hello'.codeUnits));
+        terminal.clearContentChanges();
+        terminal.write(.fromList('\x1b[H'.codeUnits));
+        expect(terminal.screen.isRowDirty(0), isFalse);
+      });
+    });
+
+    group('response', () {
+      test('DA1 generates response event with data', () {
+        Uint8List? received;
+        terminal.onEvent.listen((e) {
+          if (e case ResponseReceived(:final response)) received = response;
         });
+        terminal.write(.fromList('\x1b[c'.codeUnits));
+        expect(received, isNotNull);
+        expect(String.fromCharCodes(received!), startsWith('\x1b[?'));
+      });
+
+      test('no response event for plain text', () {
+        var responseCount = 0;
+        terminal.onEvent.listen((e) {
+          if (e is ResponseReceived) responseCount++;
+        });
+        terminal.write(.fromList('Hello'.codeUnits));
+        expect(responseCount, 0);
+      });
+
+      test('DSR cursor position generates response with row/col', () {
+        Uint8List? received;
+        terminal.onEvent.listen((e) {
+          if (e case ResponseReceived(:final response)) received = response;
+        });
+        terminal.write(.fromList('Hello'.codeUnits));
+        terminal.write(.fromList('\x1b[6n'.codeUnits));
+        expect(received, isNotNull);
+        expect(String.fromCharCodes(received!), contains('R'));
       });
     });
 

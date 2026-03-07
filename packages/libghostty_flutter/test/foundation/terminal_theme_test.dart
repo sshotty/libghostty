@@ -77,17 +77,6 @@ void main() {
       );
     });
 
-    test('resolveColor: PaletteColor returns palette entry', () {
-      final theme = TerminalTheme.defaults;
-      expect(
-        theme.resolveColor(
-          const PaletteColor(NamedColor.red),
-          isForeground: true,
-        ),
-        theme.palette[NamedColor.red],
-      );
-    });
-
     test('copyWith changes specific fields', () {
       final original = TerminalTheme.defaults;
       const newFg = Color(0xFFFFFFFF);

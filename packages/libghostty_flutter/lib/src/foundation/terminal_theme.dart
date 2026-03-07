@@ -188,7 +188,6 @@ class TerminalTheme {
     return switch (color) {
       DefaultColor() => isForeground ? foreground : background,
       RgbColor(:final r, :final g, :final b) => Color.fromARGB(255, r, g, b),
-      PaletteColor(:final index) => palette[index],
     };
   }
 

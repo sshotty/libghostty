@@ -9,7 +9,6 @@
 /// ```dart
 /// encoder.setOptionAsAlt(OptionAsAlt.left);
 /// ```
-// Maps 1:1 with the native GhosttyOptionAsAlt enum.
 enum OptionAsAlt {
   /// Option key produces macOS special characters (default behavior).
   none(0),
@@ -23,7 +22,11 @@ enum OptionAsAlt {
   /// Only the right Option key is treated as Alt.
   right(3);
 
-  final int nativeValue;
+  final int _nativeValue;
 
-  const OptionAsAlt(this.nativeValue);
+  const OptionAsAlt(this._nativeValue);
+}
+
+extension OptionAsAltNative on OptionAsAlt {
+  int get nativeValue => _nativeValue;
 }

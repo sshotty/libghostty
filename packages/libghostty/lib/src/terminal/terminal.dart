@@ -3,12 +3,14 @@ import 'dart:typed_data';
 
 import '../bindings/bindings.dart';
 import '../color.dart';
-import '../exceptions.dart' show DisposedException;
+import '../disposable.dart';
 import 'cursor.dart';
 import 'modes.dart';
 import 'mouse.dart';
 import 'screen.dart';
 import 'scrollback.dart';
+import 'terminal_event.dart';
+import 'terminal_options.dart';
 
 /// Terminal emulator state model.
 ///
@@ -23,228 +25,240 @@ import 'scrollback.dart';
 ///   }
 /// }
 ///
-/// terminal.onTitleChanged.listen((title) => setWindowTitle(title));
+/// terminal.onEvent.listen((event) {
+///   switch (event) {
+///     case BellReceived():    playBeep();
+///     case TitleChanged(:final title): setWindowTitle(title);
+///     case CursorChanged(:final cursor): updateCursor(cursor);
+///     case MouseShapeChanged(:final shape): setCursor(shape);
+///     case ResponseReceived(:final response): sendToPty(response);
+///     case ScreenChanged():   scheduleRepaint();
+///   }
+/// });
+///
 /// terminal.dispose();
 /// ```
-class Terminal {
-  // DEC private mode numbers (DECSET/DECRST, isAnsi: false).
-  static const _modeCursorKeys = 1;
-  static const _modeOrigin = 6;
-  static const _modeAutoWrap = 7;
-  static const _modeMouseX10 = 9;
-  static const _modeKeypadApplication = 66;
-  static const _modeMouseNormal = 1000;
-  static const _modeMouseButtonEvent = 1002;
-  static const _modeMouseAnyEvent = 1003;
-  static const _modeBracketedPaste = 2004;
-
-  // ANSI mode numbers (SM/RM, isAnsi: true).
-  static const _modeInsert = 4;
-
-  static final _ris = Uint8List.fromList('\x1bc'.codeUnits);
+class Terminal extends Disposable {
+  static final _resetSequence = Uint8List.fromList('\x1bc'.codeUnits);
 
   static final _finalizer = Finalizer<int>(
     (handle) => bindings.terminalFree(handle),
   );
 
   final int _handle;
-  var _disposed = false;
+  late final BindingsScreen _screen;
+  late final BindingsScrollback _scrollback;
 
-  late final NativeScreen _screen;
-  late final NativeScrollback _scrollback;
-
-  final _onBell = StreamController<void>.broadcast(sync: true);
-  final _onCursorChanged = StreamController<Cursor>.broadcast(sync: true);
-  final _onScreenChanged = StreamController<void>.broadcast(sync: true);
-  final _onTitleChanged = StreamController<String>.broadcast(sync: true);
+  final _onEvent = StreamController<TerminalEvent>.broadcast(sync: true);
 
   var _lastCursor = const Cursor();
+  var _lastModes = const TerminalModes();
+  var _lastMouseShape = MouseShape.text;
   var _hasContentChanges = false;
 
   Terminal({
     required int cols,
     required int rows,
-    RgbColor? foreground,
-    RgbColor? background,
-    int scrollbackLimit = 10000,
+    TerminalOptions options = const TerminalOptions(),
   }) : _handle = bindings.terminalNewWithConfig(
          cols,
          rows,
          RawTerminalConfig(
-           scrollbackLimit: scrollbackLimit * cols * 16,
-           fgR: foreground?.r ?? 0,
-           fgG: foreground?.g ?? 0,
-           fgB: foreground?.b ?? 0,
-           fgSet: foreground != null,
-           bgR: background?.r ?? 0,
-           bgG: background?.g ?? 0,
-           bgB: background?.b ?? 0,
-           bgSet: background != null,
+           scrollbackLimit: options.scrollbackLimit * cols * 16,
+           fgR: options.foreground?.r ?? 0,
+           fgG: options.foreground?.g ?? 0,
+           fgB: options.foreground?.b ?? 0,
+           fgSet: options.foreground != null,
+           bgR: options.background?.r ?? 0,
+           bgG: options.background?.g ?? 0,
+           bgB: options.background?.b ?? 0,
+           bgSet: options.background != null,
          ),
-       ) {
+       ),
+       super('Terminal') {
     _finalizer.attach(this, _handle, detach: this);
-    bindings.terminalWrite(_handle, _ris);
+    bindings.terminalWrite(_handle, _resetSequence);
 
-    final defaultFg = foreground ?? const RgbColor(0, 0, 0);
-    final defaultBg = background ?? const RgbColor(0, 0, 0);
-    _screen = NativeScreen(_handle, defaultFg: defaultFg, defaultBg: defaultBg);
-    _scrollback = NativeScrollback(
+    final defaultFg = options.foreground ?? const RgbColor(0, 0, 0);
+    final defaultBg = options.background ?? const RgbColor(0, 0, 0);
+    _screen = BindingsScreen(
       _handle,
+      defaultFg: defaultFg,
+      defaultBg: defaultBg,
+    );
+    _scrollback = BindingsScrollback(
+      _handle,
+      cols: cols,
       defaultFg: defaultFg,
       defaultBg: defaultBg,
     );
     _syncRenderState();
     _lastCursor = _readCursor();
+    _lastModes = _readModes();
   }
 
-  /// Current cursor state.
   Cursor get cursor {
-    _ensureNotDisposed();
+    ensureNotDisposed();
     return _lastCursor;
   }
 
   /// Whether cell content has changed since the last [clearContentChanges].
   bool get hasContentChanges {
-    _ensureNotDisposed();
+    ensureNotDisposed();
     return _hasContentChanges;
   }
 
-  /// Current terminal mode flags.
   TerminalModes get modes {
-    _ensureNotDisposed();
-
-    bool dec(int id) => bindings.terminalGetMode(_handle, id, isAnsi: false);
-    bool ansi(int id) => bindings.terminalGetMode(_handle, id, isAnsi: true);
-
-    MouseEvent mouseTracking() {
-      if (dec(_modeMouseAnyEvent)) return MouseEvent.any;
-      if (dec(_modeMouseButtonEvent)) return MouseEvent.button;
-      if (dec(_modeMouseNormal)) return MouseEvent.normal;
-      if (dec(_modeMouseX10)) return MouseEvent.x10;
-      return MouseEvent.none;
-    }
-
-    return TerminalModes(
-      alternateScreen: bindings.terminalIsAlternateScreen(_handle),
-      bracketedPaste: dec(_modeBracketedPaste),
-      cursorKeyApplication: dec(_modeCursorKeys),
-      keypadApplication: dec(_modeKeypadApplication),
-      autoWrap: dec(_modeAutoWrap),
-      originMode: dec(_modeOrigin),
-      insertMode: ansi(_modeInsert),
-      mouseEvent: mouseTracking(),
-    );
+    ensureNotDisposed();
+    return _lastModes;
   }
 
-  /// The current mouse pointer shape requested by the application via OSC 22.
+  /// Mouse pointer shape requested by the application via OSC 22.
   MouseShape get mouseShape {
-    _ensureNotDisposed();
-    return MouseShape.fromNative(bindings.terminalGetMouseShape(_handle));
+    ensureNotDisposed();
+    return _lastMouseShape;
   }
 
-  /// Fires when BEL (0x07) is received.
-  Stream<void> get onBell => _onBell.stream;
+  /// Terminal state change events, emitted synchronously during [write] and
+  /// [resize].
+  Stream<TerminalEvent> get onEvent => _onEvent.stream;
 
-  /// Fires when cursor position or visibility changes.
-  Stream<Cursor> get onCursorChanged => _onCursorChanged.stream;
-
-  /// Fires when screen content changes.
-  Stream<void> get onScreenChanged => _onScreenChanged.stream;
-
-  /// Fires when the terminal title changes via OSC 0/2.
-  Stream<String> get onTitleChanged => _onTitleChanged.stream;
-
-  /// The current visible screen (live view).
   Screen get screen {
-    _ensureNotDisposed();
+    ensureNotDisposed();
     return _screen;
   }
 
-  /// Scrollback history for the primary screen.
+  /// History for the primary screen (not available on alternate screen).
   Scrollback get scrollback {
-    _ensureNotDisposed();
+    ensureNotDisposed();
     return _scrollback;
   }
 
+  /// Resets [hasContentChanges] to false and marks the render state clean.
   void clearContentChanges() {
-    _ensureNotDisposed();
+    ensureNotDisposed();
     _hasContentChanges = false;
     bindings.renderStateMarkClean(_handle);
   }
 
-  void dispose() {
-    if (_disposed) return;
-    _disposed = true;
+  @override
+  void releaseResources() {
     _finalizer.detach(this);
     bindings.terminalFree(_handle);
-    unawaited(_onBell.close());
-    unawaited(_onCursorChanged.close());
-    unawaited(_onScreenChanged.close());
-    unawaited(_onTitleChanged.close());
+    unawaited(_onEvent.close());
   }
 
   /// Resize the terminal dimensions.
   void resize({required int cols, required int rows}) {
-    _ensureNotDisposed();
+    ensureNotDisposed();
+    if (cols == _screen.cols && rows == _screen.rows) return;
     bindings.terminalResize(_handle, cols, rows);
     _syncRenderState();
     _screen.invalidate();
-    _pollEvents();
-    _onScreenChanged.add(null);
+    _scrollback.cols = cols;
+    _updateCursor();
+    _onEvent.add(const ScreenChanged());
   }
 
   /// Feed raw bytes from the PTY through the terminal parser.
   void write(Uint8List data) {
-    _ensureNotDisposed();
-    bindings.terminalWrite(_handle, data);
-    _syncRenderState();
-    _screen.invalidate();
-    _pollEvents();
-    _onScreenChanged.add(null);
+    ensureNotDisposed();
+    final flags = bindings.terminalWrite(_handle, data);
+    _processFlags(flags);
   }
 
-  void _ensureNotDisposed() {
-    if (_disposed) throw const DisposedException('Terminal');
-  }
+  void _processFlags(int flags) {
+    if (flags == TerminalEventFlag.none) return;
 
-  void _pollEvents() {
-    final bells = bindings.terminalGetBellCount(_handle);
-    if (bells > 0) {
+    if (flags & TerminalEventFlag.bell != 0) {
+      final bells = bindings.terminalGetBellCount(_handle);
       for (var i = 0; i < bells; i++) {
-        _onBell.add(null);
+        _onEvent.add(const BellReceived());
       }
       bindings.terminalResetBellCount(_handle);
     }
-    if (bindings.terminalHasTitleChanged(_handle)) {
+
+    if (flags & TerminalEventFlag.titleChanged != 0) {
       final title = bindings.terminalGetTitle(_handle);
-      if (title != null) _onTitleChanged.add(title);
+      if (title != null) _onEvent.add(TitleChanged(title));
     }
-    final newCursor = _readCursor();
-    if (newCursor != _lastCursor) {
-      _lastCursor = newCursor;
-      _onCursorChanged.add(newCursor);
+
+    if (flags & TerminalEventFlag.mouseShapeChanged != 0) {
+      _lastMouseShape = MouseShapeNative.fromNative(
+        bindings.terminalGetMouseShape(_handle),
+      );
+      _onEvent.add(MouseShapeChanged(_lastMouseShape));
+    }
+
+    if (flags & TerminalEventFlag.hasResponse != 0) {
+      Uint8List? response;
+      while ((response = bindings.terminalReadResponse(_handle)) != null) {
+        _onEvent.add(ResponseReceived(response!));
+      }
+    }
+
+    if (flags & TerminalEventFlag.modeChanged != 0) {
+      final newModes = _readModes();
+      if (newModes != _lastModes) {
+        _lastModes = newModes;
+        _onEvent.add(const ModeChanged());
+      }
+    }
+
+    if (flags & TerminalEventFlag.repaint != 0) {
+      _syncRenderState();
+      _screen.invalidate();
+      _updateCursor();
+      _onEvent.add(const ScreenChanged());
     }
   }
 
   Cursor _readCursor() {
-    const shapeMap = {
-      0: CursorShape.block,
-      1: CursorShape.bar,
-      2: CursorShape.underline,
-      3: CursorShape.blockHollow,
-    };
     return Cursor(
       col: bindings.renderStateGetCursorX(_handle),
       row: bindings.renderStateGetCursorY(_handle),
       visible: bindings.renderStateGetCursorVisible(_handle),
-      shape:
-          shapeMap[bindings.renderStateGetCursorStyle(_handle)] ??
-          CursorShape.block,
+      shape: CursorShapeNative.fromNative(
+        bindings.renderStateGetCursorStyle(_handle),
+      ),
+    );
+  }
+
+  TerminalModes _readModes() {
+    final mode = bindings.terminalGetModes(_handle);
+
+    MouseTracking mouseTracking() {
+      if (mode & TerminalModeBits.mouseAnyEvent != 0) return .any;
+      if (mode & TerminalModeBits.mouseButtonEvent != 0) return .button;
+      if (mode & TerminalModeBits.mouseNormal != 0) return .normal;
+      if (mode & TerminalModeBits.mouseX10 != 0) return .x10;
+      return .none;
+    }
+
+    return TerminalModes(
+      alternateScreen: mode & TerminalModeBits.alternateScreen != 0,
+      bracketedPaste: mode & TerminalModeBits.bracketedPaste != 0,
+      cursorKeyApplication: mode & TerminalModeBits.cursorKeys != 0,
+      keypadApplication: mode & TerminalModeBits.keypadApplication != 0,
+      autoWrap: mode & TerminalModeBits.autoWrap != 0,
+      originMode: mode & TerminalModeBits.origin != 0,
+      insertMode: mode & TerminalModeBits.insert != 0,
+      mouseTracking: mouseTracking(),
     );
   }
 
   void _syncRenderState() {
-    final dirtyCount = bindings.renderStateUpdate(_handle);
-    _hasContentChanges = _hasContentChanges || dirtyCount > 0;
+    final raw = bindings.renderStateUpdate(_handle);
+    final state = DirtyState.fromNative(raw);
+    _screen.dirtyState = state;
+    _hasContentChanges = _hasContentChanges || state != .clean;
+  }
+
+  void _updateCursor() {
+    final newCursor = _readCursor();
+    if (newCursor != _lastCursor) {
+      _lastCursor = newCursor;
+      _onEvent.add(CursorChanged(newCursor));
+    }
   }
 }

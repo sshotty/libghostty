@@ -1,6 +1,6 @@
 import 'package:meta/meta.dart';
 
-import 'mouse.dart';
+import 'mouse.dart' show MouseTracking;
 
 /// Terminal mode flags set by DECSET/DECRST and SM/RM sequences.
 @immutable
@@ -28,7 +28,7 @@ class TerminalModes {
   final bool insertMode;
 
   /// Which mouse events the terminal reports to the application.
-  final MouseEvent mouseEvent;
+  final MouseTracking mouseTracking;
 
   const TerminalModes({
     this.bracketedPaste = false,
@@ -38,7 +38,7 @@ class TerminalModes {
     this.autoWrap = true,
     this.originMode = false,
     this.insertMode = false,
-    this.mouseEvent = MouseEvent.none,
+    this.mouseTracking = MouseTracking.none,
   });
 
   @override
@@ -50,7 +50,7 @@ class TerminalModes {
     autoWrap,
     originMode,
     insertMode,
-    mouseEvent,
+    mouseTracking,
   );
 
   @override
@@ -63,7 +63,7 @@ class TerminalModes {
       other.autoWrap == autoWrap &&
       other.originMode == originMode &&
       other.insertMode == insertMode &&
-      other.mouseEvent == mouseEvent;
+      other.mouseTracking == mouseTracking;
 
   TerminalModes copyWith({
     bool? bracketedPaste,
@@ -73,7 +73,7 @@ class TerminalModes {
     bool? autoWrap,
     bool? originMode,
     bool? insertMode,
-    MouseEvent? mouseEvent,
+    MouseTracking? mouseTracking,
   }) {
     return TerminalModes(
       bracketedPaste: bracketedPaste ?? this.bracketedPaste,
@@ -83,7 +83,7 @@ class TerminalModes {
       autoWrap: autoWrap ?? this.autoWrap,
       originMode: originMode ?? this.originMode,
       insertMode: insertMode ?? this.insertMode,
-      mouseEvent: mouseEvent ?? this.mouseEvent,
+      mouseTracking: mouseTracking ?? this.mouseTracking,
     );
   }
 
@@ -97,7 +97,9 @@ class TerminalModes {
     if (autoWrap) flags.add('autoWrap');
     if (originMode) flags.add('originMode');
     if (insertMode) flags.add('insertMode');
-    if (mouseEvent != .none) flags.add('mouseEvent:${mouseEvent.name}');
+    if (mouseTracking != .none) {
+      flags.add('mouseTracking:${mouseTracking.name}');
+    }
     return 'TerminalModes(${flags.join(', ')})';
   }
 }

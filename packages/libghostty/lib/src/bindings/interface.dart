@@ -115,8 +115,8 @@ abstract interface class GhosttyBindings {
   // ghostty_terminal_free
   void terminalFree(int handle);
 
-  // ghostty_terminal_write (ptr + len)
-  void terminalWrite(int handle, Uint8List data);
+  // ghostty_terminal_write (ptr + len) → event flags bitmask
+  int terminalWrite(int handle, Uint8List data);
 
   // ghostty_terminal_resize
   void terminalResize(int handle, int cols, int rows);
@@ -125,7 +125,7 @@ abstract interface class GhosttyBindings {
   int renderStateUpdate(int handle);
 
   // ghostty_render_state_get_viewport (GhosttyCell* buf + buf_size)
-  List<RawCell> renderStateGetViewport(int handle, int cols, int rows);
+  RawCells renderStateGetViewport(int handle, int cols, int rows);
 
   // ghostty_render_state_get_cols
   int renderStateGetCols(int handle);
@@ -164,7 +164,7 @@ abstract interface class GhosttyBindings {
   int terminalGetScrollbackLength(int handle);
 
   // ghostty_terminal_get_scrollback_line (GhosttyCell* buf + buf_size)
-  List<RawCell>? terminalGetScrollbackLine(int handle, int offset, int cols);
+  RawCells? terminalGetScrollbackLine(int handle, int offset, int cols);
 
   // ghostty_terminal_is_alternate_screen
   bool terminalIsAlternateScreen(int handle);
@@ -174,6 +174,12 @@ abstract interface class GhosttyBindings {
 
   // ghostty_terminal_get_mouse_shape
   int terminalGetMouseShape(int handle);
+
+  // ghostty_terminal_get_modes → GHOSTTY_MODE_* bitmask
+  int terminalGetModes(int handle);
+
+  // ghostty_terminal_get_palette_color → packed 0xRRGGBB
+  int terminalGetPaletteColor(int handle, int index);
 
   // ghostty_terminal_get_bell_count
   int terminalGetBellCount(int handle);
@@ -186,6 +192,21 @@ abstract interface class GhosttyBindings {
 
   // ghostty_terminal_get_title (u8* buf + buf_size)
   String? terminalGetTitle(int handle);
+
+  // ghostty_terminal_has_response
+  bool terminalHasResponse(int handle);
+
+  // ghostty_terminal_read_response (u8* buf + buf_size)
+  Uint8List? terminalReadResponse(int handle);
+
+  // ghostty_render_state_is_row_wrapped
+  bool renderStateIsRowWrapped(int handle, int row);
+
+  // ghostty_terminal_get_scrollback_grapheme (u32* buf + buf_size)
+  List<int> terminalGetScrollbackGrapheme(int handle, int offset, int col);
+
+  // ghostty_terminal_is_scrollback_row_wrapped
+  bool terminalIsScrollbackRowWrapped(int handle, int offset);
 }
 
 // Mirrors GhosttyOscCommandType + GhosttyOscCommandData results.
@@ -196,33 +217,52 @@ class OscEndResult {
   final String? windowTitle;
 }
 
-// Mirrors GhosttyCell fields from the C struct.
-class RawCell {
-  const RawCell({
-    this.codepoint = 0,
-    this.fgR = 0,
-    this.fgG = 0,
-    this.fgB = 0,
-    this.bgR = 0,
-    this.bgG = 0,
-    this.bgB = 0,
-    this.flags = 0,
-    this.width = 1,
-    this.underlineStyle = 0,
-    this.graphemeLen = 0,
-  });
+/// Flat storage for GhosttyCell structs (20 bytes each, little-endian).
+///
+/// Provides indexed field accessors over a raw byte buffer, avoiding
+/// per-cell Dart object allocations.
+class RawCells {
+  static const bytesPerCell = 20;
+  static final empty = RawCells(ByteData(0), 0);
 
-  final int codepoint;
-  final int fgR;
-  final int fgG;
-  final int fgB;
-  final int bgR;
-  final int bgG;
-  final int bgB;
-  final int flags;
-  final int width;
-  final int underlineStyle;
-  final int graphemeLen;
+  final int length;
+  final ByteData _data;
+
+  RawCells(this._data, this.length);
+
+  int codepoint(int i) => _data.getUint32(i * bytesPerCell, Endian.little);
+
+  int fgR(int i) => _data.getUint8(i * bytesPerCell + 4);
+
+  int fgG(int i) => _data.getUint8(i * bytesPerCell + 5);
+
+  int fgB(int i) => _data.getUint8(i * bytesPerCell + 6);
+
+  int bgR(int i) => _data.getUint8(i * bytesPerCell + 7);
+
+  int bgG(int i) => _data.getUint8(i * bytesPerCell + 8);
+
+  int bgB(int i) => _data.getUint8(i * bytesPerCell + 9);
+
+  int flags(int i) => _data.getUint8(i * bytesPerCell + 10);
+
+  int wide(int i) => _data.getUint8(i * bytesPerCell + 11);
+
+  int underlineStyle(int i) => _data.getUint8(i * bytesPerCell + 12);
+
+  int graphemeLen(int i) => _data.getUint8(i * bytesPerCell + 13);
+
+  int ulR(int i) => _data.getUint8(i * bytesPerCell + 14);
+
+  int ulG(int i) => _data.getUint8(i * bytesPerCell + 15);
+
+  int ulB(int i) => _data.getUint8(i * bytesPerCell + 16);
+
+  int ulSet(int i) => _data.getUint8(i * bytesPerCell + 17);
+
+  int contentTag(int i) => _data.getUint8(i * bytesPerCell + 18);
+
+  int semanticContent(int i) => _data.getUint8(i * bytesPerCell + 19);
 }
 
 // Mirrors GhosttyTerminalConfig fields from the C struct.
@@ -241,6 +281,7 @@ class RawTerminalConfig {
     this.cursorG = 0,
     this.cursorB = 0,
     this.cursorSet = false,
+    this.palette = const [],
   });
 
   final int scrollbackLimit;
@@ -256,6 +297,12 @@ class RawTerminalConfig {
   final int cursorG;
   final int cursorB;
   final bool cursorSet;
+
+  /// ANSI palette overrides as packed 0xRRGGBB values.
+  ///
+  /// Entries with index >= 16 are ignored. Only non-null entries in the
+  /// list at indices 0-15 are applied; all others keep their defaults.
+  final List<int?> palette;
 }
 
 // Mirrors GhosttySgrAttribute (tag + value union) from the C struct.
@@ -290,6 +337,32 @@ abstract final class KeyEncoderOpt {
   static const modifyOtherKeysState2 = 4;
   static const kittyFlags = 5;
   static const macosOptionAsAlt = 6;
+}
+
+// Event flags returned by ghostty_terminal_write (GHOSTTY_TERMINAL_EVENT_*).
+abstract final class TerminalEventFlag {
+  static const none = 0;
+  static const int bell = 1 << 0;
+  static const int titleChanged = 1 << 1;
+  static const int mouseShapeChanged = 1 << 2;
+  static const int repaint = 1 << 3;
+  static const int modeChanged = 1 << 4;
+  static const int hasResponse = 1 << 5;
+}
+
+// Mode bitmask bits from ghostty_terminal_get_modes (GHOSTTY_MODE_*).
+abstract final class TerminalModeBits {
+  static const int cursorKeys = 1 << 0;
+  static const int keypadApplication = 1 << 1;
+  static const int autoWrap = 1 << 2;
+  static const int origin = 1 << 3;
+  static const int insert = 1 << 4;
+  static const int bracketedPaste = 1 << 5;
+  static const int mouseX10 = 1 << 6;
+  static const int mouseNormal = 1 << 7;
+  static const int mouseButtonEvent = 1 << 8;
+  static const int mouseAnyEvent = 1 << 9;
+  static const int alternateScreen = 1 << 10;
 }
 
 // Bit flags from GhosttyCell.flags in the C struct.

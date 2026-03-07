@@ -1,33 +1,17 @@
-import 'package:libghostty/libghostty.dart';
+import 'package:libghostty/src/enums/underline_style.dart';
 import 'package:test/test.dart';
 
 void main() {
   group('UnderlineStyle', () {
     test('fromNative round-trips for all values', () {
       for (final style in UnderlineStyle.values) {
-        expect(UnderlineStyle.fromNative(style.index), style);
+        expect(UnderlineStyleNative.fromNative(style.nativeValue), style);
       }
     });
 
-    test('fromNative returns none for negative value', () {
-      expect(UnderlineStyle.fromNative(-1), UnderlineStyle.none);
-    });
-
-    test('fromNative returns none for out-of-bounds value', () {
-      expect(
-        UnderlineStyle.fromNative(UnderlineStyle.values.length),
-        UnderlineStyle.none,
-      );
-      expect(UnderlineStyle.fromNative(999), UnderlineStyle.none);
-    });
-
-    test('expected values at expected indices', () {
-      expect(UnderlineStyle.fromNative(0), UnderlineStyle.none);
-      expect(UnderlineStyle.fromNative(1), UnderlineStyle.single);
-      expect(UnderlineStyle.fromNative(2), UnderlineStyle.doubleLine);
-      expect(UnderlineStyle.fromNative(3), UnderlineStyle.curly);
-      expect(UnderlineStyle.fromNative(4), UnderlineStyle.dotted);
-      expect(UnderlineStyle.fromNative(5), UnderlineStyle.dashed);
+    test('fromNative returns none for out-of-bounds values', () {
+      expect(UnderlineStyleNative.fromNative(-1), UnderlineStyle.none);
+      expect(UnderlineStyleNative.fromNative(999), UnderlineStyle.none);
     });
   });
 }
