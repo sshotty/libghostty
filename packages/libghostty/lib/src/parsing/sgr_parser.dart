@@ -1,7 +1,7 @@
 import '../bindings/bindings.dart';
 import '../color.dart';
+import '../disposable.dart';
 import '../enums/underline_style.dart';
-import '../exceptions.dart';
 import 'sgr_attribute.dart';
 
 SgrAttribute _convertAttribute(RawSgrAttribute attr) {
@@ -68,23 +68,15 @@ SgrAttribute _convertUnderline(RawSgrAttribute attr) {
 ///
 /// parser.dispose();
 /// ```
-class SgrParser {
+class SgrParser extends Disposable {
   static final _finalizer = Finalizer<int>(
     (handle) => bindings.sgrFree(handle),
   );
 
   final int _handle;
-  var _disposed = false;
 
-  SgrParser() : _handle = bindings.sgrNew() {
+  SgrParser() : _handle = bindings.sgrNew(), super('SgrParser') {
     _finalizer.attach(this, _handle, detach: this);
-  }
-
-  void dispose() {
-    if (_disposed) return;
-    _disposed = true;
-    _finalizer.detach(this);
-    bindings.sgrFree(_handle);
   }
 
   /// Parses SGR parameters and returns a list of attributes.
@@ -92,17 +84,19 @@ class SgrParser {
   /// [params] are the numeric values from a CSI SGR sequence.
   /// [separators] optionally specifies `;` or `:` for each parameter position.
   List<SgrAttribute> parse(List<int> params, {List<String>? separators}) {
-    _ensureNotDisposed();
+    ensureNotDisposed();
     final raw = bindings.sgrParse(_handle, params, separators);
     return raw.map(_convertAttribute).toList();
   }
 
-  void reset() {
-    _ensureNotDisposed();
-    bindings.sgrReset(_handle);
+  @override
+  void releaseResources() {
+    _finalizer.detach(this);
+    bindings.sgrFree(_handle);
   }
 
-  void _ensureNotDisposed() {
-    if (_disposed) throw const DisposedException('SgrParser');
+  void reset() {
+    ensureNotDisposed();
+    bindings.sgrReset(_handle);
   }
 }

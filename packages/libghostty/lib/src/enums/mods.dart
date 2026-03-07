@@ -31,6 +31,7 @@ final class Mods {
   static const altSide = Mods(1 << 8);
   static const superSide = Mods(1 << 9);
 
+  @internal
   final int value;
 
   const Mods(this.value);

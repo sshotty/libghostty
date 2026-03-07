@@ -10,11 +10,6 @@ void main() {
       expect(const DefaultColor(), equals(const DefaultColor()));
     });
 
-    test('PaletteColor equality', () {
-      expect(const PaletteColor(1), equals(const PaletteColor(1)));
-      expect(const PaletteColor(1), isNot(equals(const PaletteColor(2))));
-    });
-
     test('RgbColor equality', () {
       expect(const RgbColor(10, 20, 30), equals(const RgbColor(10, 20, 30)));
       expect(
@@ -24,26 +19,16 @@ void main() {
     });
 
     test('different subtypes are not equal', () {
-      expect(const DefaultColor(), isNot(equals(const PaletteColor(0))));
-      expect(const PaletteColor(0), isNot(equals(const RgbColor(0, 0, 0))));
+      expect(const DefaultColor(), isNot(equals(const RgbColor(0, 0, 0))));
     });
 
     test('pattern matching works on sealed type', () {
       const CellColor color = RgbColor(100, 150, 200);
       final result = switch (color) {
         DefaultColor() => 'default',
-        PaletteColor(index: final i) => 'palette:$i',
         RgbColor(:final r, :final g, :final b) => 'rgb:$r,$g,$b',
       };
       expect(result, 'rgb:100,150,200');
-    });
-
-    test('PaletteColor toString', () {
-      expect(const PaletteColor(42).toString(), contains('42'));
-    });
-
-    test('RgbColor toString', () {
-      expect(const RgbColor(10, 20, 30).toString(), contains('10'));
     });
   });
 
@@ -121,7 +106,6 @@ void main() {
       expect(cell.foreground, isA<DefaultColor>());
       expect(cell.background, isA<DefaultColor>());
       expect(cell.style, const CellStyle());
-      expect(cell.hyperlink, isNull);
       expect(cell.isWide, isFalse);
     });
 
@@ -132,52 +116,90 @@ void main() {
     });
 
     test('wide character cell', () {
-      const cell = Cell(content: '\u{4e16}', isWide: true);
+      const cell = Cell(content: '\u{4e16}', wide: CellWidth.wide);
       expect(cell.isWide, isTrue);
+      expect(cell.wide, CellWidth.wide);
       expect(cell.content, '\u{4e16}');
     });
 
-    test('cell equality', () {
+    test('cell equality and hashCode', () {
       const a = Cell(
         content: 'A',
-        foreground: PaletteColor(1),
+        foreground: RgbColor(255, 0, 0),
+        underlineColor: RgbColor(0, 0, 255),
         style: CellStyle(bold: true),
       );
       const b = Cell(
         content: 'A',
-        foreground: PaletteColor(1),
+        foreground: RgbColor(255, 0, 0),
+        underlineColor: RgbColor(0, 0, 255),
         style: CellStyle(bold: true),
       );
       expect(a, equals(b));
       expect(a.hashCode, equals(b.hashCode));
     });
 
-    test('cell inequality on content', () {
-      const a = Cell(content: 'A');
-      const b = Cell(content: 'B');
-      expect(a, isNot(equals(b)));
+    test('cell inequality across all properties', () {
+      const base = Cell(content: 'A');
+      expect(base, isNot(equals(const Cell(content: 'B'))));
+      expect(
+        base,
+        isNot(equals(const Cell(content: 'A', style: CellStyle(bold: true)))),
+      );
+      expect(
+        base,
+        isNot(
+          equals(const Cell(content: 'A', foreground: RgbColor(255, 0, 0))),
+        ),
+      );
+      expect(
+        base,
+        isNot(
+          equals(const Cell(content: 'A', underlineColor: RgbColor(255, 0, 0))),
+        ),
+      );
+      expect(
+        base,
+        isNot(
+          equals(
+            const Cell(content: 'A', semanticContent: SemanticContent.input),
+          ),
+        ),
+      );
+      expect(
+        base,
+        isNot(equals(const Cell(content: 'A', wide: CellWidth.wide))),
+      );
     });
 
-    test('cell inequality on style', () {
-      const a = Cell(content: 'A', style: CellStyle(bold: true));
-      const b = Cell(content: 'A', style: CellStyle(italic: true));
-      expect(a, isNot(equals(b)));
+    test('defaults', () {
+      expect(Cell.empty.semanticContent, SemanticContent.output);
+      expect(Cell.empty.wide, CellWidth.narrow);
+    });
+  });
+
+  group('CellWidth', () {
+    test('fromNative maps all values', () {
+      expect(CellWidth.fromNative(0), CellWidth.narrow);
+      expect(CellWidth.fromNative(1), CellWidth.wide);
+      expect(CellWidth.fromNative(2), CellWidth.spacerTail);
+      expect(CellWidth.fromNative(3), CellWidth.spacerHead);
     });
 
-    test('cell inequality on color', () {
-      const a = Cell(content: 'A', foreground: PaletteColor(1));
-      const b = Cell(content: 'A', foreground: PaletteColor(2));
-      expect(a, isNot(equals(b)));
+    test('fromNative defaults to narrow for unknown', () {
+      expect(CellWidth.fromNative(99), CellWidth.narrow);
+    });
+  });
+
+  group('SemanticContent', () {
+    test('fromNative maps all values', () {
+      expect(SemanticContent.fromNative(0), SemanticContent.output);
+      expect(SemanticContent.fromNative(1), SemanticContent.input);
+      expect(SemanticContent.fromNative(2), SemanticContent.prompt);
     });
 
-    test('cell with hyperlink', () {
-      const cell = Cell(content: 'link', hyperlink: 'https://example.com');
-      expect(cell.hyperlink, 'https://example.com');
-    });
-
-    test('cell with underline color', () {
-      const cell = Cell(content: 'A', underlineColor: RgbColor(255, 0, 0));
-      expect(cell.underlineColor, const RgbColor(255, 0, 0));
+    test('fromNative defaults to output for unknown', () {
+      expect(SemanticContent.fromNative(99), SemanticContent.output);
     });
   });
 }

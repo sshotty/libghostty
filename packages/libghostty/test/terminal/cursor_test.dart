@@ -35,22 +35,19 @@ void main() {
       expect(a.hashCode, equals(b.hashCode));
     });
 
-    test('inequality on position', () {
-      const a = Cursor(row: 5, col: 10);
-      const b = Cursor(row: 6, col: 10);
-      expect(a, isNot(equals(b)));
-    });
-
-    test('inequality on visibility', () {
-      const a = Cursor();
-      const b = Cursor(visible: false);
-      expect(a, isNot(equals(b)));
-    });
-
-    test('inequality on shape', () {
-      const a = Cursor();
-      const b = Cursor(shape: CursorShape.underline);
-      expect(a, isNot(equals(b)));
+    test('inequality across all properties', () {
+      const base = Cursor(row: 5, col: 10);
+      expect(base, isNot(equals(const Cursor(row: 6, col: 10))));
+      expect(
+        base,
+        isNot(equals(const Cursor(row: 5, col: 10, visible: false))),
+      );
+      expect(
+        base,
+        isNot(
+          equals(const Cursor(row: 5, col: 10, shape: CursorShape.underline)),
+        ),
+      );
     });
 
     test('copyWith', () {

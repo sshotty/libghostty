@@ -15,7 +15,7 @@ void main() {
       expect(modes.autoWrap, isTrue);
       expect(modes.originMode, isFalse);
       expect(modes.insertMode, isFalse);
-      expect(modes.mouseEvent, MouseEvent.none);
+      expect(modes.mouseTracking, MouseTracking.none);
     });
 
     test('equality with same values', () {
@@ -45,30 +45,31 @@ void main() {
       expect(modified.bracketedPaste, isFalse);
     });
 
-    test('equality includes mouseEvent', () {
-      const a = TerminalModes(mouseEvent: MouseEvent.normal);
-      const b = TerminalModes(mouseEvent: MouseEvent.normal);
-      const c = TerminalModes(mouseEvent: MouseEvent.x10);
+    test('equality includes mouseTracking', () {
+      const a = TerminalModes(mouseTracking: MouseTracking.normal);
+      const b = TerminalModes(mouseTracking: MouseTracking.normal);
+      const c = TerminalModes(mouseTracking: MouseTracking.x10);
       expect(a, equals(b));
       expect(a.hashCode, equals(b.hashCode));
       expect(a, isNot(equals(c)));
     });
 
-    test('copyWith mouseEvent', () {
+    test('copyWith mouseTracking', () {
       const original = TerminalModes();
-      final modified = original.copyWith(mouseEvent: .any);
-      expect(modified.mouseEvent, MouseEvent.any);
+      final modified = original.copyWith(mouseTracking: .any);
+      expect(modified.mouseTracking, MouseTracking.any);
       expect(modified.autoWrap, isTrue);
     });
 
-    test('toString includes mouseEvent when active', () {
-      const modes = TerminalModes(mouseEvent: .button);
-      expect(modes.toString(), contains('mouseEvent'));
-    });
-
-    test('toString excludes mouseEvent when none', () {
-      const modes = TerminalModes();
-      expect(modes.toString(), isNot(contains('mouseEvent')));
+    test('toString reflects mouseTracking state', () {
+      expect(
+        const TerminalModes(mouseTracking: .button).toString(),
+        contains('mouseTracking'),
+      );
+      expect(
+        const TerminalModes().toString(),
+        isNot(contains('mouseTracking')),
+      );
     });
   });
 }

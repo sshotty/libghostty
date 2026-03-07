@@ -12,22 +12,19 @@ final GhosttyBindings bindings = NativeBindings();
 
 Future<void> initializeForWeb(Uri wasmUri) async {}
 
-RawCell _cellFromNative(native.GhosttyCell c) => RawCell(
-  codepoint: c.codepoint,
-  fgR: c.fg_r,
-  fgG: c.fg_g,
-  fgB: c.fg_b,
-  bgR: c.bg_r,
-  bgG: c.bg_g,
-  bgB: c.bg_b,
-  flags: c.flags,
-  width: c.width,
-  underlineStyle: c.underline_style,
-  graphemeLen: c.grapheme_len,
-);
+RawCells _cellsFromPointer(ffi.Pointer<native.GhosttyCell> buf, int count) {
+  if (count <= 0) return RawCells.empty;
+  final byteCount = count * RawCells.bytesPerCell;
+  final bytes = Uint8List(byteCount);
+  bytes.setAll(0, buf.cast<ffi.Uint8>().asTypedList(byteCount));
+  return RawCells(ByteData.sublistView(bytes), count);
+}
 
 class NativeBindings implements GhosttyBindings {
   final _utf8Ptrs = <int, ffi.Pointer<ffi.Char>>{};
+
+  // Reuse native viewport buffer per terminal to avoid calloc/free each frame.
+  final _viewportBufs = <int, (ffi.Pointer<native.GhosttyCell>, int)>{};
 
   NativeBindings();
 
@@ -361,21 +358,27 @@ class NativeBindings implements GhosttyBindings {
       native.ghostty_render_state_get_rows(ffi.Pointer.fromAddress(handle));
 
   @override
-  List<RawCell> renderStateGetViewport(int handle, int cols, int rows) {
+  RawCells renderStateGetViewport(int handle, int cols, int rows) {
     final totalCells = cols * rows;
-    if (totalCells == 0) return const [];
-    final buf = calloc<native.GhosttyCell>(totalCells);
-    try {
-      final count = native.ghostty_render_state_get_viewport(
-        ffi.Pointer.fromAddress(handle),
-        buf,
-        totalCells,
-      );
-      if (count < 0) return const [];
-      return [for (var i = 0; i < count; i++) _cellFromNative(buf[i])];
-    } finally {
-      calloc.free(buf);
+    if (totalCells == 0) return RawCells.empty;
+
+    final cached = _viewportBufs[handle];
+    ffi.Pointer<native.GhosttyCell> buf;
+    if (cached != null && cached.$2 >= totalCells) {
+      buf = cached.$1;
+    } else {
+      if (cached != null) calloc.free(cached.$1);
+      buf = calloc<native.GhosttyCell>(totalCells);
+      _viewportBufs[handle] = (buf, totalCells);
     }
+
+    final count = native.ghostty_render_state_get_viewport(
+      ffi.Pointer.fromAddress(handle),
+      buf,
+      totalCells,
+    );
+    if (count < 0) return RawCells.empty;
+    return _cellsFromPointer(buf, count);
   }
 
   @override
@@ -455,6 +458,8 @@ class NativeBindings implements GhosttyBindings {
 
   @override
   void terminalFree(int handle) {
+    final cached = _viewportBufs.remove(handle);
+    if (cached != null) calloc.free(cached.$1);
     native.ghostty_terminal_free(ffi.Pointer.fromAddress(handle));
   }
 
@@ -467,15 +472,26 @@ class NativeBindings implements GhosttyBindings {
       .ghostty_terminal_get_mode(ffi.Pointer.fromAddress(handle), mode, isAnsi);
 
   @override
+  int terminalGetModes(int handle) =>
+      native.ghostty_terminal_get_modes(ffi.Pointer.fromAddress(handle));
+
+  @override
   int terminalGetMouseShape(int handle) =>
       native.ghostty_terminal_get_mouse_shape(ffi.Pointer.fromAddress(handle));
+
+  @override
+  int terminalGetPaletteColor(int handle, int index) =>
+      native.ghostty_terminal_get_palette_color(
+        ffi.Pointer.fromAddress(handle),
+        index,
+      );
 
   @override
   int terminalGetScrollbackLength(int handle) => native
       .ghostty_terminal_get_scrollback_length(ffi.Pointer.fromAddress(handle));
 
   @override
-  List<RawCell>? terminalGetScrollbackLine(int handle, int offset, int cols) {
+  RawCells? terminalGetScrollbackLine(int handle, int offset, int cols) {
     if (cols <= 0) return null;
     final buf = calloc<native.GhosttyCell>(cols);
     try {
@@ -486,7 +502,7 @@ class NativeBindings implements GhosttyBindings {
         cols,
       );
       if (count < 0) return null;
-      return [for (var i = 0; i < count; i++) _cellFromNative(buf[i])];
+      return _cellsFromPointer(buf, count);
     } finally {
       calloc.free(buf);
     }
@@ -547,6 +563,15 @@ class NativeBindings implements GhosttyBindings {
       cfg.ref.cursor_g = config.cursorG;
       cfg.ref.cursor_b = config.cursorB;
       cfg.ref.cursor_set = config.cursorSet ? 1 : 0;
+      var paletteBitmask = 0;
+      for (var i = 0; i < config.palette.length && i < 16; i++) {
+        final rgb = config.palette[i];
+        if (rgb != null) {
+          cfg.ref.palette[i] = rgb;
+          paletteBitmask |= 1 << i;
+        }
+      }
+      cfg.ref.palette_set = paletteBitmask;
       checkResult(
         native
             .ghostty_terminal_new_with_config(ffi.nullptr, cols, rows, cfg, ptr)
@@ -574,12 +599,12 @@ class NativeBindings implements GhosttyBindings {
   }
 
   @override
-  void terminalWrite(int handle, Uint8List data) {
-    if (data.isEmpty) return;
+  int terminalWrite(int handle, Uint8List data) {
+    if (data.isEmpty) return 0;
     final ptr = calloc<ffi.Uint8>(data.length);
     try {
       ptr.asTypedList(data.length).setAll(0, data);
-      native.ghostty_terminal_write(
+      return native.ghostty_terminal_write(
         ffi.Pointer.fromAddress(handle),
         ptr,
         data.length,
@@ -588,6 +613,58 @@ class NativeBindings implements GhosttyBindings {
       calloc.free(ptr);
     }
   }
+
+  @override
+  bool terminalHasResponse(int handle) =>
+      native.ghostty_terminal_has_response(ffi.Pointer.fromAddress(handle));
+
+  @override
+  Uint8List? terminalReadResponse(int handle) {
+    final buf = calloc<ffi.Uint8>(4096);
+    try {
+      final len = native.ghostty_terminal_read_response(
+        ffi.Pointer.fromAddress(handle),
+        buf,
+        4096,
+      );
+      if (len <= 0) return null;
+      return Uint8List.fromList(buf.asTypedList(len));
+    } finally {
+      calloc.free(buf);
+    }
+  }
+
+  @override
+  bool renderStateIsRowWrapped(int handle, int row) =>
+      native.ghostty_render_state_is_row_wrapped(
+        ffi.Pointer.fromAddress(handle),
+        row,
+      );
+
+  @override
+  List<int> terminalGetScrollbackGrapheme(int handle, int offset, int col) {
+    final buf = calloc<ffi.Uint32>(32);
+    try {
+      final count = native.ghostty_terminal_get_scrollback_grapheme(
+        ffi.Pointer.fromAddress(handle),
+        offset,
+        col,
+        buf,
+        32,
+      );
+      if (count <= 0) return const [];
+      return [for (var i = 0; i < count; i++) buf[i]];
+    } finally {
+      calloc.free(buf);
+    }
+  }
+
+  @override
+  bool terminalIsScrollbackRowWrapped(int handle, int offset) =>
+      native.ghostty_terminal_is_scrollback_row_wrapped(
+        ffi.Pointer.fromAddress(handle),
+        offset,
+      );
 
   RawSgrAttribute _convertNativeSgrAttribute(native.GhosttySgrAttribute attr) {
     final tag = attr.tagAsInt;

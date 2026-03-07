@@ -20,6 +20,7 @@ final class KittyKeyFlags {
   static const reportAssociated = KittyKeyFlags(1 << 4);
   static const all = KittyKeyFlags(0x1F);
 
+  @internal
   final int value;
 
   const KittyKeyFlags(this.value);

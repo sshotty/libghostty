@@ -1,26 +1,23 @@
-/// Underline rendering style for terminal text.
-///
-/// Set via SGR escape sequences.
-///
-/// ```dart
-/// final style = UnderlineStyle.fromNative(cell.underlineStyle);
-/// if (style == UnderlineStyle.curly) {
-///   print('curly underline');
-/// }
-/// ```
-// Maps 1:1 with the native GhosttySgrUnderline enum.
-enum UnderlineStyle {
-  none,
-  single,
-  doubleLine,
-  curly,
-  dotted,
-  dashed;
+import 'package:meta/meta.dart';
 
-  static UnderlineStyle fromNative(int value) {
-    if (value >= 0 && value < UnderlineStyle.values.length) {
-      return UnderlineStyle.values[value];
-    }
-    return UnderlineStyle.none;
-  }
+/// Underline rendering style for terminal text set via SGR sequences.
+enum UnderlineStyle {
+  none(0),
+  single(1),
+  doubleLine(2),
+  curly(3),
+  dotted(4),
+  dashed(5);
+
+  static final _nativeMap = {
+    for (final style in values) style.nativeValue: style,
+  };
+
+  @internal
+  final int nativeValue;
+
+  const UnderlineStyle(this.nativeValue);
+
+  @internal
+  static UnderlineStyle fromNative(int value) => _nativeMap[value] ?? .none;
 }

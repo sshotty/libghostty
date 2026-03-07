@@ -12,10 +12,10 @@ index 4f8fef88e..1a4656385 100644
  #ifdef __cplusplus
 diff --git a/include/ghostty/vt/terminal.h b/include/ghostty/vt/terminal.h
 new file mode 100644
-index 000000000..6c1d0d9bc
+index 000000000..261724cdb
 --- /dev/null
 +++ b/include/ghostty/vt/terminal.h
-@@ -0,0 +1,524 @@
+@@ -0,0 +1,733 @@
 +/**
 + * @file terminal.h
 + *
@@ -55,15 +55,24 @@ index 000000000..6c1d0d9bc
 + *   GhosttyResult result = ghostty_terminal_new(NULL, 80, 24, &terminal);
 + *   assert(result == GHOSTTY_SUCCESS);
 + *
-+ *   ghostty_terminal_write(terminal, (const uint8_t *)"Hello!", 6);
-+ *   ghostty_render_state_update(terminal);
++ *   uint32_t events = ghostty_terminal_write(terminal, (const uint8_t *)"Hello!", 6);
++ *   if (events & GHOSTTY_TERMINAL_EVENT_REPAINT) {
++ *     ghostty_render_state_update(terminal);
 + *
-+ *   int cols = ghostty_render_state_get_cols(terminal);
-+ *   int rows = ghostty_render_state_get_rows(terminal);
-+ *   GhosttyCell cells[cols * rows];
-+ *   ghostty_render_state_get_viewport(terminal, cells, cols * rows);
++ *     int cols = ghostty_render_state_get_cols(terminal);
++ *     int rows = ghostty_render_state_get_rows(terminal);
++ *     GhosttyCell cells[cols * rows];
++ *     ghostty_render_state_get_viewport(terminal, cells, cols * rows);
 + *
-+ *   // cells[0].codepoint == 'H', cells[1].codepoint == 'e', ...
++ *     // cells[0].codepoint == 'H', cells[1].codepoint == 'e', ...
++ *   }
++ *
++ *   // Check for responses that need to be sent back to the PTY
++ *   if (events & GHOSTTY_TERMINAL_EVENT_HAS_RESPONSE) {
++ *     uint8_t resp[256];
++ *     int n = ghostty_terminal_read_response(terminal, resp, sizeof(resp));
++ *     // Write resp[0..n] back to the PTY
++ *   }
 + *
 + *   ghostty_terminal_free(terminal);
 + *   return 0;
@@ -90,7 +99,7 @@ index 000000000..6c1d0d9bc
 +/**
 + * A single terminal cell as returned by the render state.
 + *
-+ * Cells are 16 bytes, tightly packed in row-major order.
++ * Cells are 20 bytes, tightly packed in row-major order.
 + * Use the GHOSTTY_CELL_FLAG_* constants to interpret the flags field.
 + *
 + * @ingroup terminal
@@ -104,10 +113,15 @@ index 000000000..6c1d0d9bc
 +    uint8_t bg_g;             /**< Background green component (0-255) */
 +    uint8_t bg_b;             /**< Background blue component (0-255) */
 +    uint8_t flags;            /**< Style flags (GHOSTTY_CELL_FLAG_*) */
-+    uint8_t width;            /**< Cell width (0=spacer, 1=narrow, 2=wide) */
++    uint8_t wide;             /**< Wide property (GHOSTTY_CELL_WIDE_*) */
 +    uint8_t underline_style;  /**< Underline style (0=none, see GhosttySgrUnderline) */
 +    uint8_t grapheme_len;     /**< Number of extra codepoints in grapheme cluster */
-+    uint8_t _pad[2];          /**< Reserved padding */
++    uint8_t ul_r;             /**< Underline color red component (0-255) */
++    uint8_t ul_g;             /**< Underline color green component (0-255) */
++    uint8_t ul_b;             /**< Underline color blue component (0-255) */
++    uint8_t ul_set;           /**< Non-zero if underline color is explicitly set */
++    uint8_t content_tag;      /**< Content tag (GHOSTTY_CELL_CONTENT_TAG_*) */
++    uint8_t semantic_content; /**< Semantic content type (GHOSTTY_CELL_SEMANTIC_*) */
 +} GhosttyCell;
 +
 +/**
@@ -132,6 +146,8 @@ index 000000000..6c1d0d9bc
 +    uint8_t cursor_g;          /**< Cursor color green */
 +    uint8_t cursor_b;          /**< Cursor color blue */
 +    uint8_t cursor_set;        /**< Non-zero to apply cursor color */
++    uint32_t palette[16];      /**< ANSI palette colors as packed 0xRRGGBB (0 = use default) */
++    uint16_t palette_set;      /**< Bitmask: bit N non-zero to apply palette[N] */
 +} GhosttyTerminalConfig;
 +
 +/** Bold text */
@@ -151,6 +167,46 @@ index 000000000..6c1d0d9bc
 +/** Overline decoration */
 +#define GHOSTTY_CELL_FLAG_OVERLINE      (1 << 7)
 +
++/** @name Cell wide property values
++ * Values for the GhosttyCell.wide field.
++ * @{
++ */
++/** Not a wide character, cell width 1 */
++#define GHOSTTY_CELL_WIDE_NARROW      0
++/** Wide character, cell width 2 */
++#define GHOSTTY_CELL_WIDE_WIDE        1
++/** Spacer after wide character (do not render) */
++#define GHOSTTY_CELL_WIDE_SPACER_TAIL 2
++/** Spacer at end of soft-wrapped line before a wide character */
++#define GHOSTTY_CELL_WIDE_SPACER_HEAD 3
++/** @} */
++
++/** @name Cell content tag values
++ * Values for the GhosttyCell.content_tag field.
++ * @{
++ */
++/** Single codepoint (may be zero for empty cell) */
++#define GHOSTTY_CELL_CONTENT_TAG_CODEPOINT          0
++/** Codepoint that is part of a multi-codepoint grapheme cluster */
++#define GHOSTTY_CELL_CONTENT_TAG_CODEPOINT_GRAPHEME 1
++/** Cell has no text, only a palette background color */
++#define GHOSTTY_CELL_CONTENT_TAG_BG_COLOR_PALETTE   2
++/** Cell has no text, only an RGB background color */
++#define GHOSTTY_CELL_CONTENT_TAG_BG_COLOR_RGB       3
++/** @} */
++
++/** @name Cell semantic content values
++ * Values for the GhosttyCell.semantic_content field (OSC 133).
++ * @{
++ */
++/** Regular output content (e.g. command output) */
++#define GHOSTTY_CELL_SEMANTIC_OUTPUT 0
++/** User input content (e.g. command being typed) */
++#define GHOSTTY_CELL_SEMANTIC_INPUT  1
++/** Prompt content (e.g. "user@host >") */
++#define GHOSTTY_CELL_SEMANTIC_PROMPT 2
++/** @} */
++
 +/** Block cursor */
 +#define GHOSTTY_CURSOR_STYLE_BLOCK        0
 +/** Vertical bar cursor */
@@ -166,6 +222,45 @@ index 000000000..6c1d0d9bc
 +#define GHOSTTY_DIRTY_STATE_PARTIAL 1
 +/** Full screen changed */
 +#define GHOSTTY_DIRTY_STATE_FULL    2
++
++/** @name Terminal event flags
++ * Flags returned by ghostty_terminal_write() indicating what changed
++ * during parsing. These are the C API equivalent of Ghostty's inline
++ * handler notifications (StreamHandler.surfaceMessageWriter).
++ * @{
++ */
++/** No events occurred */
++#define GHOSTTY_TERMINAL_EVENT_NONE                0
++/** Bell character (BEL, 0x07) was received */
++#define GHOSTTY_TERMINAL_EVENT_BELL                (1 << 0)
++/** Window title changed (OSC 0/2) */
++#define GHOSTTY_TERMINAL_EVENT_TITLE_CHANGED       (1 << 1)
++/** Mouse pointer shape changed (OSC 22) */
++#define GHOSTTY_TERMINAL_EVENT_MOUSE_SHAPE_CHANGED (1 << 2)
++/** Screen content changed — call ghostty_render_state_update() before rendering */
++#define GHOSTTY_TERMINAL_EVENT_REPAINT             (1 << 3)
++/** Terminal mode changed (DECSET/DECRST/SM/RM) */
++#define GHOSTTY_TERMINAL_EVENT_MODE_CHANGED        (1 << 4)
++/** Response data available — call ghostty_terminal_read_response() */
++#define GHOSTTY_TERMINAL_EVENT_HAS_RESPONSE        (1 << 5)
++/** @} */
++
++/** @name Terminal mode bitmask bits
++ * Bits returned by ghostty_terminal_get_modes() indicating active modes.
++ * @{
++ */
++#define GHOSTTY_MODE_CURSOR_KEYS        (1 << 0)
++#define GHOSTTY_MODE_KEYPAD_APPLICATION (1 << 1)
++#define GHOSTTY_MODE_AUTO_WRAP          (1 << 2)
++#define GHOSTTY_MODE_ORIGIN             (1 << 3)
++#define GHOSTTY_MODE_INSERT             (1 << 4)
++#define GHOSTTY_MODE_BRACKETED_PASTE    (1 << 5)
++#define GHOSTTY_MODE_MOUSE_X10          (1 << 6)
++#define GHOSTTY_MODE_MOUSE_NORMAL       (1 << 7)
++#define GHOSTTY_MODE_MOUSE_BUTTON_EVENT (1 << 8)
++#define GHOSTTY_MODE_MOUSE_ANY_EVENT    (1 << 9)
++#define GHOSTTY_MODE_ALTERNATE_SCREEN   (1 << 10)
++/** @} */
 +
 +/**
 + * Create a new terminal emulator instance.
@@ -225,15 +320,17 @@ index 000000000..6c1d0d9bc
 + * Write data to the terminal.
 + *
 + * Processes the provided bytes as terminal input, interpreting any escape
-+ * sequences and updating terminal state accordingly.
++ * sequences and updating terminal state accordingly. Returns a bitmask of
++ * GHOSTTY_TERMINAL_EVENT_* flags indicating what changed during parsing.
 + *
 + * @param terminal The terminal handle, must not be NULL
 + * @param data The input data to process
 + * @param len Length of the input data in bytes
++ * @return Bitmask of GHOSTTY_TERMINAL_EVENT_* flags
 + *
 + * @ingroup terminal
 + */
-+void ghostty_terminal_write(
++uint32_t ghostty_terminal_write(
 +    GhosttyTerminal terminal,
 +    const uint8_t *data,
 +    size_t len);
@@ -255,6 +352,41 @@ index 000000000..6c1d0d9bc
 +    GhosttyTerminal terminal,
 +    int cols,
 +    int rows);
++
++/**
++ * Check whether response data is available.
++ *
++ * Terminal escape sequences like DA (Device Attributes) and DSR (Device
++ * Status Report) generate response bytes that must be sent back to the
++ * PTY. Call this after ghostty_terminal_write() returns the
++ * GHOSTTY_TERMINAL_EVENT_HAS_RESPONSE flag.
++ *
++ * @param terminal The terminal handle, must not be NULL
++ * @return true if response data is available
++ *
++ * @ingroup terminal
++ */
++bool ghostty_terminal_has_response(GhosttyTerminal terminal);
++
++/**
++ * Read response data from the terminal.
++ *
++ * Copies pending response bytes into the output buffer and removes them
++ * from the internal buffer. If the buffer is smaller than the available
++ * data, only buf_size bytes are copied and the rest remain available for
++ * subsequent calls.
++ *
++ * @param terminal The terminal handle, must not be NULL
++ * @param out Buffer to fill with response bytes
++ * @param out_size Size of the buffer in bytes
++ * @return Number of bytes written, or 0 if no response data
++ *
++ * @ingroup terminal
++ */
++int ghostty_terminal_read_response(
++    GhosttyTerminal terminal,
++    uint8_t *out,
++    int out_size);
 +
 +/**
 + * Update the render state from the terminal.
@@ -419,6 +551,17 @@ index 000000000..6c1d0d9bc
 +    int out_size);
 +
 +/**
++ * Check whether a viewport row is soft-wrapped to the next row.
++ *
++ * @param terminal The terminal handle, must not be NULL
++ * @param row Zero-based row index
++ * @return true if the row wraps to the next row, false otherwise
++ *
++ * @ingroup terminal
++ */
++bool ghostty_render_state_is_row_wrapped(GhosttyTerminal terminal, int row);
++
++/**
 + * Get the number of scrollback lines available.
 + *
 + * @param terminal The terminal handle, must not be NULL
@@ -447,6 +590,41 @@ index 000000000..6c1d0d9bc
 +    int offset,
 +    GhosttyCell *out_buf,
 +    int buf_size);
++
++/**
++ * Get the extra codepoints in a scrollback grapheme cluster.
++ *
++ * For scrollback cells where GhosttyCell.grapheme_len > 0, this function
++ * retrieves the additional codepoints beyond the base codepoint.
++ *
++ * @param terminal The terminal handle, must not be NULL
++ * @param offset Zero-based scrollback offset (0 = most recent)
++ * @param col Zero-based column index
++ * @param out Buffer to fill with codepoints
++ * @param out_size Size of the buffer in number of uint32_t elements
++ * @return Number of codepoints written
++ *
++ * @ingroup terminal
++ */
++int ghostty_terminal_get_scrollback_grapheme(
++    GhosttyTerminal terminal,
++    int offset,
++    int col,
++    uint32_t *out,
++    int out_size);
++
++/**
++ * Check whether a scrollback row is soft-wrapped to the next row.
++ *
++ * @param terminal The terminal handle, must not be NULL
++ * @param offset Zero-based scrollback offset (0 = most recent)
++ * @return true if the row wraps to the next row, false otherwise
++ *
++ * @ingroup terminal
++ */
++bool ghostty_terminal_is_scrollback_row_wrapped(
++    GhosttyTerminal terminal,
++    int offset);
 +
 +/**
 + * Check whether the alternate screen buffer is active.
@@ -533,6 +711,37 @@ index 000000000..6c1d0d9bc
 + */
 +uint8_t ghostty_terminal_get_mouse_shape(GhosttyTerminal terminal);
 +
++/**
++ * Get all common terminal modes as a single bitmask.
++ *
++ * Returns a bitmask of GHOSTTY_MODE_* flags representing the current state
++ * of commonly queried terminal modes. More efficient than calling
++ * ghostty_terminal_get_mode() repeatedly.
++ *
++ * @param terminal The terminal handle, must not be NULL
++ * @return Bitmask of GHOSTTY_MODE_* flags
++ *
++ * @ingroup terminal
++ */
++uint32_t ghostty_terminal_get_modes(GhosttyTerminal terminal);
++
++/**
++ * Get a palette color as a packed RGB value.
++ *
++ * Returns the current color for the given palette index from the render
++ * state. The color is packed as (R << 16 | G << 8 | B). Call
++ * ghostty_render_state_update() before this to ensure the palette is current.
++ *
++ * @param terminal The terminal handle, must not be NULL
++ * @param index Palette color index (0-255)
++ * @return Packed RGB color value
++ *
++ * @ingroup terminal
++ */
++uint32_t ghostty_terminal_get_palette_color(
++    GhosttyTerminal terminal,
++    uint8_t index);
++
 +#ifdef __cplusplus
 +}
 +#endif
@@ -541,10 +750,10 @@ index 000000000..6c1d0d9bc
 +
 +#endif /* GHOSTTY_VT_TERMINAL_H */
 diff --git a/src/lib_vt.zig b/src/lib_vt.zig
-index 426660621..e6697a4dd 100644
+index 426660621..9607fbab5 100644
 --- a/src/lib_vt.zig
 +++ b/src/lib_vt.zig
-@@ -144,6 +144,34 @@ comptime {
+@@ -144,6 +144,41 @@ comptime {
          @export(&c.sgr_attribute_tag, .{ .name = "ghostty_sgr_attribute_tag" });
          @export(&c.sgr_attribute_value, .{ .name = "ghostty_sgr_attribute_value" });
  
@@ -571,16 +780,23 @@ index 426660621..e6697a4dd 100644
 +        @export(&c.terminal_is_alternate_screen, .{ .name = "ghostty_terminal_is_alternate_screen" });
 +        @export(&c.terminal_get_mode, .{ .name = "ghostty_terminal_get_mode" });
 +        @export(&c.terminal_get_mouse_shape, .{ .name = "ghostty_terminal_get_mouse_shape" });
++        @export(&c.terminal_get_modes, .{ .name = "ghostty_terminal_get_modes" });
++        @export(&c.terminal_get_palette_color, .{ .name = "ghostty_terminal_get_palette_color" });
 +        @export(&c.terminal_get_bell_count, .{ .name = "ghostty_terminal_get_bell_count" });
 +        @export(&c.terminal_reset_bell_count, .{ .name = "ghostty_terminal_reset_bell_count" });
 +        @export(&c.terminal_has_title_changed, .{ .name = "ghostty_terminal_has_title_changed" });
 +        @export(&c.terminal_get_title, .{ .name = "ghostty_terminal_get_title" });
++        @export(&c.terminal_has_response, .{ .name = "ghostty_terminal_has_response" });
++        @export(&c.terminal_read_response, .{ .name = "ghostty_terminal_read_response" });
++        @export(&c.render_state_is_row_wrapped, .{ .name = "ghostty_render_state_is_row_wrapped" });
++        @export(&c.terminal_get_scrollback_grapheme, .{ .name = "ghostty_terminal_get_scrollback_grapheme" });
++        @export(&c.terminal_is_scrollback_row_wrapped, .{ .name = "ghostty_terminal_is_scrollback_row_wrapped" });
 +
          // On Wasm we need to export our allocator convenience functions.
          if (builtin.target.cpu.arch.isWasm()) {
              const alloc = @import("lib/allocator/convenience.zig");
 diff --git a/src/terminal/c/main.zig b/src/terminal/c/main.zig
-index bc92597f5..64d133061 100644
+index bc92597f5..1da26a020 100644
 --- a/src/terminal/c/main.zig
 +++ b/src/terminal/c/main.zig
 @@ -4,6 +4,7 @@ pub const key_event = @import("key_event.zig");
@@ -591,7 +807,7 @@ index bc92597f5..64d133061 100644
  
  // The full C API, unexported.
  pub const osc_new = osc.new;
-@@ -52,6 +53,34 @@ pub const key_encoder_encode = key_encode.encode;
+@@ -52,6 +53,41 @@ pub const key_encoder_encode = key_encode.encode;
  
  pub const paste_is_safe = paste.is_safe;
  
@@ -618,15 +834,22 @@ index bc92597f5..64d133061 100644
 +pub const terminal_is_alternate_screen = terminal.is_alternate_screen;
 +pub const terminal_get_mode = terminal.get_mode;
 +pub const terminal_get_mouse_shape = terminal.get_mouse_shape;
++pub const terminal_get_modes = terminal.get_modes;
++pub const terminal_get_palette_color = terminal.get_palette_color;
 +pub const terminal_get_bell_count = terminal.get_bell_count;
 +pub const terminal_reset_bell_count = terminal.reset_bell_count;
 +pub const terminal_has_title_changed = terminal.has_title_changed;
 +pub const terminal_get_title = terminal.get_title;
++pub const terminal_has_response = terminal.has_response;
++pub const terminal_read_response = terminal.read_response;
++pub const render_state_is_row_wrapped = terminal.is_row_wrapped;
++pub const terminal_get_scrollback_grapheme = terminal.get_scrollback_grapheme;
++pub const terminal_is_scrollback_row_wrapped = terminal.is_scrollback_row_wrapped;
 +
  test {
      _ = color;
      _ = osc;
-@@ -59,6 +88,7 @@ test {
+@@ -59,6 +95,7 @@ test {
      _ = key_encode;
      _ = paste;
      _ = sgr;
@@ -636,10 +859,10 @@ index bc92597f5..64d133061 100644
      _ = @import("../../lib/allocator.zig");
 diff --git a/src/terminal/c/terminal.zig b/src/terminal/c/terminal.zig
 new file mode 100644
-index 000000000..f25e12a69
+index 000000000..1091a554f
 --- /dev/null
 +++ b/src/terminal/c/terminal.zig
-@@ -0,0 +1,657 @@
+@@ -0,0 +1,1222 @@
 +const std = @import("std");
 +const Allocator = std.mem.Allocator;
 +const lib_alloc = @import("../../lib/allocator.zig");
@@ -654,8 +877,22 @@ index 000000000..f25e12a69
 +const size = @import("../size.zig");
 +const Style = @import("../style.zig").Style;
 +const modes = terminal_pkg.modes;
++const ansi = @import("../ansi.zig");
++
++const mouse_shape_pkg = @import("../mouse_shape.zig");
 +
 +const log = std.log.scoped(.terminal_c);
++
++/// Event flags returned by `write`. These mirror the role of
++/// `surfaceMessageWriter` calls in Ghostty's `StreamHandler`:
++/// the handler sets flags inline during parsing so the caller
++/// knows what changed without polling.
++pub const event_bell: u32 = 1 << 0;
++pub const event_title_changed: u32 = 1 << 1;
++pub const event_mouse_shape_changed: u32 = 1 << 2;
++pub const event_repaint: u32 = 1 << 3;
++pub const event_mode_changed: u32 = 1 << 4;
++pub const event_has_response: u32 = 1 << 5;
 +
 +/// C: GhosttyCell
 +pub const GhosttyCell = extern struct {
@@ -667,10 +904,15 @@ index 000000000..f25e12a69
 +    bg_g: u8,
 +    bg_b: u8,
 +    flags: u8,
-+    width: u8,
++    wide: u8,
 +    underline_style: u8,
 +    grapheme_len: u8,
-+    _pad: [2]u8 = .{ 0, 0 },
++    ul_r: u8 = 0,
++    ul_g: u8 = 0,
++    ul_b: u8 = 0,
++    ul_set: u8 = 0,
++    content_tag: u8 = 0,
++    semantic_content: u8 = 0,
 +
 +    pub const flag_bold: u8 = 1 << 0;
 +    pub const flag_italic: u8 = 1 << 1;
@@ -697,6 +939,8 @@ index 000000000..f25e12a69
 +    cursor_g: u8,
 +    cursor_b: u8,
 +    cursor_set: u8,
++    palette: [16]u32,
++    palette_set: u16,
 +};
 +
 +const TerminalWrapper = struct {
@@ -704,9 +948,12 @@ index 000000000..f25e12a69
 +    terminal: Terminal,
 +    stream: EventStream,
 +    render_state: RenderState,
++    pending_events: u32 = 0,
++    last_mouse_shape: mouse_shape_pkg.MouseShape = .text,
 +    bell_count: u32 = 0,
 +    title_changed: bool = false,
 +    title_buf: std.ArrayListUnmanaged(u8),
++    response_buf: std.ArrayListUnmanaged(u8),
 +};
 +
 +/// C: GhosttyTerminal
@@ -733,14 +980,101 @@ index 000000000..f25e12a69
 +        value: stream_pkg.Action.Value(action),
 +    ) !void {
 +        switch (action) {
-+            .bell => self.wrapper.bell_count +|= 1,
++            .bell => {
++                self.wrapper.bell_count +|= 1;
++                self.wrapper.pending_events |= event_bell;
++            },
 +            .window_title => {
 +                self.wrapper.title_buf.clearRetainingCapacity();
 +                self.wrapper.title_buf.appendSlice(self.wrapper.alloc, value.title) catch {};
 +                self.wrapper.title_changed = true;
++                self.wrapper.pending_events |= event_title_changed;
 +            },
-+            else => return self.readonly.vt(action, value),
++            .set_mode, .reset_mode => {
++                try self.readonly.vt(action, value);
++                self.wrapper.pending_events |= event_repaint | event_mode_changed;
++            },
++            .device_attributes => self.deviceAttributes(value),
++            .device_status => self.deviceStatusReport(value),
++            .enquiry => self.appendResponse("\x1b[?1;0c"),
++            .request_mode => self.requestMode(value.mode),
++            .request_mode_unknown => self.requestModeUnknown(value),
++            .kitty_keyboard_query => self.kittyKeyboardQuery(),
++            .xtversion => self.appendResponse("\x1bP>|ghostty-vt\x1b\\"),
++            else => {
++                try self.readonly.vt(action, value);
++                self.wrapper.pending_events |= event_repaint;
++                if (self.wrapper.terminal.mouse_shape != self.wrapper.last_mouse_shape) {
++                    self.wrapper.last_mouse_shape = self.wrapper.terminal.mouse_shape;
++                    self.wrapper.pending_events |= event_mouse_shape_changed;
++                }
++            },
 +        }
++    }
++
++    fn deviceAttributes(self: *EventHandler, req: ansi.DeviceAttributeReq) void {
++        switch (req) {
++            .primary => self.appendResponse("\x1b[?62;22c"),
++            .secondary => self.appendResponse("\x1b[>1;10;0c"),
++            else => {},
++        }
++    }
++
++    fn deviceStatusReport(self: *EventHandler, value: stream_pkg.Action.Value(.device_status)) void {
++        switch (value.request) {
++            .operating_status => self.appendResponse("\x1b[0n"),
++            .cursor_position => {
++                const t = &self.wrapper.terminal;
++                const pos: struct { x: usize, y: usize } = if (t.modes.get(.origin)) .{
++                    .x = t.screens.active.cursor.x -| t.scrolling_region.left,
++                    .y = t.screens.active.cursor.y -| t.scrolling_region.top,
++                } else .{
++                    .x = t.screens.active.cursor.x,
++                    .y = t.screens.active.cursor.y,
++                };
++                var buf: [32]u8 = undefined;
++                const resp = std.fmt.bufPrint(&buf, "\x1b[{};{}R", .{
++                    pos.y + 1,
++                    pos.x + 1,
++                }) catch return;
++                self.appendResponse(resp);
++            },
++            else => {},
++        }
++    }
++
++    fn requestMode(self: *EventHandler, mode: terminal_pkg.modes.Mode) void {
++        const tag: modes.ModeTag = @bitCast(@intFromEnum(mode));
++        const code: u8 = if (self.wrapper.terminal.modes.get(mode)) 1 else 2;
++        var buf: [32]u8 = undefined;
++        const resp = std.fmt.bufPrint(&buf, "\x1b[{s}{};{}$y", .{
++            if (tag.ansi) "" else "?",
++            tag.value,
++            code,
++        }) catch return;
++        self.appendResponse(resp);
++    }
++
++    fn requestModeUnknown(self: *EventHandler, raw: stream_pkg.Action.Value(.request_mode_unknown)) void {
++        var buf: [32]u8 = undefined;
++        const resp = std.fmt.bufPrint(&buf, "\x1b[{s}{};0$y", .{
++            if (raw.ansi) "" else "?",
++            raw.mode,
++        }) catch return;
++        self.appendResponse(resp);
++    }
++
++    fn kittyKeyboardQuery(self: *EventHandler) void {
++        var buf: [16]u8 = undefined;
++        const resp = std.fmt.bufPrint(&buf, "\x1b[?{}u", .{
++            self.wrapper.terminal.screens.active.kitty_keyboard.current().int(),
++        }) catch return;
++        self.appendResponse(resp);
++    }
++
++    fn appendResponse(self: *EventHandler, data: []const u8) void {
++        self.wrapper.response_buf.appendSlice(self.wrapper.alloc, data) catch return;
++        self.wrapper.pending_events |= event_has_response;
 +    }
 +};
 +
@@ -786,6 +1120,16 @@ index 000000000..f25e12a69
 +            .g = cfg.cursor_g,
 +            .b = cfg.cursor_b,
 +        });
++        for (0..16) |i| {
++            if (cfg.palette_set & (@as(u16, 1) << @intCast(i)) != 0) {
++                const rgb = cfg.palette[i];
++                terminal_colors.palette.set(@intCast(i), .{
++                    .r = @intCast((rgb >> 16) & 0xFF),
++                    .g = @intCast((rgb >> 8) & 0xFF),
++                    .b = @intCast(rgb & 0xFF),
++                });
++            }
++        }
 +    }
 +
 +    var t = Terminal.init(alloc, .{
@@ -803,6 +1147,7 @@ index 000000000..f25e12a69
 +        .stream = undefined,
 +        .render_state = .empty,
 +        .title_buf = .empty,
++        .response_buf = .empty,
 +    };
 +
 +    wrapper.stream = .initAlloc(alloc, .init(&wrapper.terminal, wrapper));
@@ -818,6 +1163,7 @@ index 000000000..f25e12a69
 +    wrapper.render_state.deinit(alloc);
 +    wrapper.terminal.deinit(alloc);
 +    wrapper.title_buf.deinit(alloc);
++    wrapper.response_buf.deinit(alloc);
 +    alloc.destroy(wrapper);
 +}
 +
@@ -825,11 +1171,13 @@ index 000000000..f25e12a69
 +    handle: Handle,
 +    data: [*]const u8,
 +    len: usize,
-+) callconv(.c) void {
-+    const wrapper = handle orelse return;
++) callconv(.c) u32 {
++    const wrapper = handle orelse return 0;
++    wrapper.pending_events = 0;
 +    wrapper.stream.nextSlice(data[0..len]) catch |err| {
 +        log.warn("write error: {}", .{err});
 +    };
++    return wrapper.pending_events;
 +}
 +
 +pub fn resize(
@@ -842,6 +1190,31 @@ index 000000000..f25e12a69
 +    const urows: size.CellCountInt = if (rows > 0) @intCast(rows) else 1;
 +    wrapper.terminal.resize(wrapper.alloc, ucols, urows) catch return .out_of_memory;
 +    return .success;
++}
++
++pub fn has_response(handle: Handle) callconv(.c) bool {
++    const wrapper = handle orelse return false;
++    return wrapper.response_buf.items.len > 0;
++}
++
++pub fn read_response(
++    handle: Handle,
++    out: [*]u8,
++    out_size: c_int,
++) callconv(.c) c_int {
++    const wrapper = handle orelse return 0;
++    const resp = wrapper.response_buf.items;
++    if (resp.len == 0) return 0;
++    const count = @min(resp.len, @as(usize, @intCast(out_size)));
++    @memcpy(out[0..count], resp[0..count]);
++    if (count == resp.len) {
++        wrapper.response_buf.clearRetainingCapacity();
++    } else {
++        const remaining = resp.len - count;
++        std.mem.copyForwards(u8, wrapper.response_buf.items[0..remaining], resp[count..]);
++        wrapper.response_buf.items.len = remaining;
++    }
++    return @intCast(count);
 +}
 +
 +pub fn update(handle: Handle) callconv(.c) u8 {
@@ -904,12 +1277,9 @@ index 000000000..f25e12a69
 +            gc.flags = f;
 +            gc.underline_style = @intFromEnum(style.flags.underline);
 +
-+            gc.width = switch (raw.wide) {
-+                .narrow => 1,
-+                .wide => 2,
-+                .spacer_tail => 0,
-+                .spacer_head => 0,
-+            };
++            gc.wide = @intFromEnum(raw.wide);
++            gc.content_tag = @intFromEnum(raw.content_tag);
++            gc.semantic_content = @intFromEnum(raw.semantic_content);
 +
 +            gc.grapheme_len = if (raw.hasGrapheme())
 +                @intCast(@min(graphemes[x].len, 255))
@@ -1014,6 +1384,14 @@ index 000000000..f25e12a69
 +    return @intCast(count);
 +}
 +
++pub fn is_row_wrapped(handle: Handle, row: c_int) callconv(.c) bool {
++    const wrapper = handle orelse return false;
++    const rs = &wrapper.render_state;
++    const urow: usize = @intCast(row);
++    if (urow >= rs.rows) return false;
++    return rs.row_data.items(.raw)[urow].wrap;
++}
++
 +pub fn get_scrollback_length(handle: Handle) callconv(.c) c_int {
 +    const wrapper = handle orelse return 0;
 +    const t = &wrapper.terminal;
@@ -1072,17 +1450,73 @@ index 000000000..f25e12a69
 +            gc.underline_style = @intFromEnum(style.flags.underline);
 +        }
 +
-+        gc.width = switch (raw.wide) {
-+            .narrow => 1,
-+            .wide => 2,
-+            .spacer_tail => 0,
-+            .spacer_head => 0,
-+        };
++        gc.wide = @intFromEnum(raw.wide);
++        gc.content_tag = @intFromEnum(raw.content_tag);
++        gc.semantic_content = @intFromEnum(raw.semantic_content);
++
++        gc.grapheme_len = if (raw.hasGrapheme())
++            @intCast(@min(p.lookupGrapheme(&raw).?.len, 255))
++        else
++            0;
 +
 +        out_buf[x] = gc;
 +    }
 +
 +    return @intCast(cols);
++}
++
++pub fn get_scrollback_grapheme(
++    handle: Handle,
++    offset: c_int,
++    col: c_int,
++    out: [*]u32,
++    out_size: c_int,
++) callconv(.c) c_int {
++    const wrapper = handle orelse return 0;
++    const t = &wrapper.terminal;
++    const s = t.screens.get(.primary) orelse return 0;
++
++    const total = s.pages.total_rows;
++    const visible = s.pages.rows;
++    if (total <= visible) return 0;
++
++    const scrollback_len = total - visible;
++    const uoffset: usize = @intCast(offset);
++    const ucol: usize = @intCast(col);
++    if (uoffset >= scrollback_len or ucol >= s.pages.cols) return 0;
++
++    const row_pin = s.pages.pin(.{ .screen = .{ .x = 0, .y = @intCast(uoffset) } }) orelse return 0;
++    const p: *page.Page = &row_pin.node.data;
++    const rac = row_pin.rowAndCell();
++    const page_cells = p.getCells(rac.row);
++
++    const raw = page_cells[ucol];
++    if (!raw.hasGrapheme()) return 0;
++
++    const grapheme = p.lookupGrapheme(&raw) orelse return 0;
++    const count = @min(grapheme.len, @as(usize, @intCast(out_size)));
++    for (0..count) |i| {
++        out[i] = @intCast(grapheme[i]);
++    }
++    return @intCast(count);
++}
++
++pub fn is_scrollback_row_wrapped(handle: Handle, offset: c_int) callconv(.c) bool {
++    const wrapper = handle orelse return false;
++    const t = &wrapper.terminal;
++    const s = t.screens.get(.primary) orelse return false;
++
++    const total = s.pages.total_rows;
++    const visible = s.pages.rows;
++    if (total <= visible) return false;
++
++    const scrollback_len = total - visible;
++    const uoffset: usize = @intCast(offset);
++    if (uoffset >= scrollback_len) return false;
++
++    const row_pin = s.pages.pin(.{ .screen = .{ .x = 0, .y = @intCast(uoffset) } }) orelse return false;
++    const rac = row_pin.rowAndCell();
++    return rac.row.wrap;
 +}
 +
 +pub fn is_alternate_screen(handle: Handle) callconv(.c) bool {
@@ -1103,6 +1537,43 @@ index 000000000..f25e12a69
 +pub fn get_mouse_shape(handle: Handle) callconv(.c) u8 {
 +    const wrapper = handle orelse return 8; // .text
 +    return @intCast(@intFromEnum(wrapper.terminal.mouse_shape));
++}
++
++/// Mode bitmask bits for `get_modes`.
++pub const mode_cursor_keys: u32 = 1 << 0;
++pub const mode_keypad_application: u32 = 1 << 1;
++pub const mode_auto_wrap: u32 = 1 << 2;
++pub const mode_origin: u32 = 1 << 3;
++pub const mode_insert: u32 = 1 << 4;
++pub const mode_bracketed_paste: u32 = 1 << 5;
++pub const mode_mouse_x10: u32 = 1 << 6;
++pub const mode_mouse_normal: u32 = 1 << 7;
++pub const mode_mouse_button_event: u32 = 1 << 8;
++pub const mode_mouse_any_event: u32 = 1 << 9;
++pub const mode_alternate_screen: u32 = 1 << 10;
++
++pub fn get_modes(handle: Handle) callconv(.c) u32 {
++    const wrapper = handle orelse return 0;
++    const t = &wrapper.terminal;
++    var result: u32 = 0;
++    if (t.modes.get(.cursor_keys)) result |= mode_cursor_keys;
++    if (t.modes.get(.keypad_keys)) result |= mode_keypad_application;
++    if (t.modes.get(.wraparound)) result |= mode_auto_wrap;
++    if (t.modes.get(.origin)) result |= mode_origin;
++    if (t.modes.get(.insert)) result |= mode_insert;
++    if (t.modes.get(.bracketed_paste)) result |= mode_bracketed_paste;
++    if (t.modes.get(.mouse_event_x10)) result |= mode_mouse_x10;
++    if (t.modes.get(.mouse_event_normal)) result |= mode_mouse_normal;
++    if (t.modes.get(.mouse_event_button)) result |= mode_mouse_button_event;
++    if (t.modes.get(.mouse_event_any)) result |= mode_mouse_any_event;
++    if (t.screens.active_key == .alternate) result |= mode_alternate_screen;
++    return result;
++}
++
++pub fn get_palette_color(handle: Handle, index: u8) callconv(.c) u32 {
++    const wrapper = handle orelse return 0;
++    const c = wrapper.render_state.colors.palette[index];
++    return packRGB(c.r, c.g, c.b);
 +}
 +
 +pub fn get_bell_count(handle: Handle) callconv(.c) u32 {
@@ -1147,7 +1618,7 @@ index 000000000..f25e12a69
 +        .bg_g = rs.colors.background.g,
 +        .bg_b = rs.colors.background.b,
 +        .flags = 0,
-+        .width = 1,
++        .wide = 0,
 +        .underline_style = 0,
 +        .grapheme_len = 0,
 +    };
@@ -1182,6 +1653,22 @@ index 000000000..f25e12a69
 +            gc.bg_b = c.b;
 +        },
 +    }
++    switch (style.underline_color) {
++        .none => {},
++        .palette => |idx| {
++            const c = rs.colors.palette[idx];
++            gc.ul_r = c.r;
++            gc.ul_g = c.g;
++            gc.ul_b = c.b;
++            gc.ul_set = 1;
++        },
++        .rgb => |c| {
++            gc.ul_r = c.r;
++            gc.ul_g = c.g;
++            gc.ul_b = c.b;
++            gc.ul_set = 1;
++        },
++    }
 +}
 +
 +test "alloc" {
@@ -1207,7 +1694,7 @@ index 000000000..f25e12a69
 +    ));
 +    defer free(h);
 +
-+    write(h.?, "Hello", 5);
++    _ = write(h.?, "Hello", 5);
 +    _ = update(h);
 +
 +    try testing.expectEqual(@as(c_int, 10), get_cols(h));
@@ -1256,7 +1743,8 @@ index 000000000..f25e12a69
 +    defer free(h);
 +
 +    try testing.expectEqual(@as(u32, 0), get_bell_count(h));
-+    write(h.?, "\x07\x07", 2);
++    const events = write(h.?, "\x07\x07", 2);
++    try testing.expect(events & event_bell != 0);
 +    try testing.expectEqual(@as(u32, 2), get_bell_count(h));
 +
 +    reset_bell_count(h);
@@ -1275,7 +1763,8 @@ index 000000000..f25e12a69
 +    defer free(h);
 +
 +    try testing.expect(!has_title_changed(h));
-+    write(h.?, "\x1b]0;Hello\x1b\\", 12);
++    const events = write(h.?, "\x1b]0;Hello\x1b\\", 12);
++    try testing.expect(events & event_title_changed != 0);
 +    try testing.expect(has_title_changed(h));
 +
 +    var title_buf: [256]u8 = undefined;
@@ -1286,9 +1775,301 @@ index 000000000..f25e12a69
 +    try testing.expect(!has_title_changed(h));
 +}
 +
++test "mode change event" {
++    const testing = std.testing;
++    var h: Handle = undefined;
++    try testing.expectEqual(Result.success, new(
++        &lib_alloc.test_allocator,
++        80,
++        24,
++        &h,
++    ));
++    defer free(h);
++
++    // DECSET 2004 (bracketed paste)
++    const events = write(h.?, "\x1b[?2004h", 8);
++    try testing.expect(events & event_mode_changed != 0);
++    try testing.expect(events & event_repaint != 0);
++}
++
++test "get_modes bitmask" {
++    const testing = std.testing;
++    var h: Handle = undefined;
++    try testing.expectEqual(Result.success, new(
++        &lib_alloc.test_allocator,
++        80,
++        24,
++        &h,
++    ));
++    defer free(h);
++
++    // Default: auto_wrap (wraparound) is on by default
++    var m = get_modes(h);
++    try testing.expect(m & mode_auto_wrap != 0);
++    try testing.expect(m & mode_bracketed_paste == 0);
++
++    // Enable bracketed paste
++    _ = write(h.?, "\x1b[?2004h", 8);
++    m = get_modes(h);
++    try testing.expect(m & mode_bracketed_paste != 0);
++
++    // Disable bracketed paste
++    _ = write(h.?, "\x1b[?2004l", 8);
++    m = get_modes(h);
++    try testing.expect(m & mode_bracketed_paste == 0);
++}
++
++test "get_palette_color" {
++    const testing = std.testing;
++    var h: Handle = undefined;
++    try testing.expectEqual(Result.success, new(
++        &lib_alloc.test_allocator,
++        80,
++        24,
++        &h,
++    ));
++    defer free(h);
++
++    _ = update(h);
++
++    // Color 0 (black) should be 0x000000 by default
++    const c0 = get_palette_color(h, 0);
++    try testing.expectEqual(@as(u32, 0x000000), c0);
++
++    // Color 1 (red) should have a non-zero value
++    const c1 = get_palette_color(h, 1);
++    try testing.expect(c1 != 0);
++}
++
++test "response: primary DA" {
++    const testing = std.testing;
++    var h: Handle = undefined;
++    try testing.expectEqual(Result.success, new(
++        &lib_alloc.test_allocator,
++        80,
++        24,
++        &h,
++    ));
++    defer free(h);
++
++    try testing.expect(!has_response(h));
++
++    // CSI c (primary DA request)
++    const events = write(h.?, "\x1b[c", 3);
++    try testing.expect(events & event_has_response != 0);
++    try testing.expect(has_response(h));
++
++    var buf: [64]u8 = undefined;
++    const n = read_response(h, &buf, 64);
++    try testing.expect(n > 0);
++    try testing.expectEqualStrings("\x1b[?62;22c", buf[0..@intCast(n)]);
++
++    try testing.expect(!has_response(h));
++}
++
++test "response: DSR cursor position" {
++    const testing = std.testing;
++    var h: Handle = undefined;
++    try testing.expectEqual(Result.success, new(
++        &lib_alloc.test_allocator,
++        80,
++        24,
++        &h,
++    ));
++    defer free(h);
++
++    // Write some text to move cursor
++    _ = write(h.?, "ABCDE", 5);
++
++    // CSI 6 n (cursor position report)
++    const events = write(h.?, "\x1b[6n", 4);
++    try testing.expect(events & event_has_response != 0);
++
++    var buf: [64]u8 = undefined;
++    const n = read_response(h, &buf, 64);
++    // Cursor at row 1, col 6 (1-indexed)
++    try testing.expectEqualStrings("\x1b[1;6R", buf[0..@intCast(n)]);
++}
++
++test "response: secondary DA" {
++    const testing = std.testing;
++    var h: Handle = undefined;
++    try testing.expectEqual(Result.success, new(
++        &lib_alloc.test_allocator,
++        80,
++        24,
++        &h,
++    ));
++    defer free(h);
++
++    // CSI > c (secondary DA request)
++    const events = write(h.?, "\x1b[>c", 4);
++    try testing.expect(events & event_has_response != 0);
++
++    var buf: [64]u8 = undefined;
++    const n = read_response(h, &buf, 64);
++    try testing.expectEqualStrings("\x1b[>1;10;0c", buf[0..@intCast(n)]);
++}
++
++test "response: operating status" {
++    const testing = std.testing;
++    var h: Handle = undefined;
++    try testing.expectEqual(Result.success, new(
++        &lib_alloc.test_allocator,
++        80,
++        24,
++        &h,
++    ));
++    defer free(h);
++
++    // CSI 5 n (operating status report)
++    const events = write(h.?, "\x1b[5n", 4);
++    try testing.expect(events & event_has_response != 0);
++
++    var buf: [64]u8 = undefined;
++    const n = read_response(h, &buf, 64);
++    try testing.expectEqualStrings("\x1b[0n", buf[0..@intCast(n)]);
++}
++
++test "response: XTVERSION" {
++    const testing = std.testing;
++    var h: Handle = undefined;
++    try testing.expectEqual(Result.success, new(
++        &lib_alloc.test_allocator,
++        80,
++        24,
++        &h,
++    ));
++    defer free(h);
++
++    // CSI > 0 q (XTVERSION request)
++    const events = write(h.?, "\x1b[>0q", 5);
++    try testing.expect(events & event_has_response != 0);
++
++    var buf: [64]u8 = undefined;
++    const n = read_response(h, &buf, 64);
++    try testing.expectEqualStrings("\x1bP>|ghostty-vt\x1b\\", buf[0..@intCast(n)]);
++}
++
++test "response: partial read" {
++    const testing = std.testing;
++    var h: Handle = undefined;
++    try testing.expectEqual(Result.success, new(
++        &lib_alloc.test_allocator,
++        80,
++        24,
++        &h,
++    ));
++    defer free(h);
++
++    // Generate a response
++    _ = write(h.?, "\x1b[5n", 4);
++
++    // Read only 2 bytes at a time
++    var buf: [2]u8 = undefined;
++    const n1 = read_response(h, &buf, 2);
++    try testing.expectEqual(@as(c_int, 2), n1);
++    try testing.expectEqualStrings("\x1b[", buf[0..2]);
++
++    // Response should still have remaining bytes
++    try testing.expect(has_response(h));
++
++    var buf2: [64]u8 = undefined;
++    const n2 = read_response(h, &buf2, 64);
++    try testing.expectEqualStrings("0n", buf2[0..@intCast(n2)]);
++
++    try testing.expect(!has_response(h));
++}
++
++test "response: kitty keyboard query" {
++    const testing = std.testing;
++    var h: Handle = undefined;
++    try testing.expectEqual(Result.success, new(
++        &lib_alloc.test_allocator,
++        80,
++        24,
++        &h,
++    ));
++    defer free(h);
++
++    // CSI ? u (kitty keyboard query)
++    const events = write(h.?, "\x1b[?u", 4);
++    try testing.expect(events & event_has_response != 0);
++
++    var buf: [64]u8 = undefined;
++    const n = read_response(h, &buf, 64);
++    // Default kitty keyboard flags = 0
++    try testing.expectEqualStrings("\x1b[?0u", buf[0..@intCast(n)]);
++}
++
++test "row wrapping" {
++    const testing = std.testing;
++    var h: Handle = undefined;
++    try testing.expectEqual(Result.success, new(
++        &lib_alloc.test_allocator,
++        5,
++        3,
++        &h,
++    ));
++    defer free(h);
++
++    // Write more than 5 chars to force wrapping on a 5-col terminal
++    _ = write(h.?, "ABCDEFGH", 8);
++    _ = update(h);
++
++    // Row 0 should be wrapped (it continues to row 1)
++    try testing.expect(is_row_wrapped(h, 0));
++    // Row 1 should not be wrapped (cursor is on row 1, hasn't filled it)
++    try testing.expect(!is_row_wrapped(h, 1));
++}
++
++test "config palette" {
++    const testing = std.testing;
++    var h: Handle = undefined;
++    const cfg = GhosttyTerminalConfig{
++        .scrollback_limit = 10000,
++        .fg_r = 0,
++        .fg_g = 0,
++        .fg_b = 0,
++        .fg_set = 0,
++        .bg_r = 0,
++        .bg_g = 0,
++        .bg_b = 0,
++        .bg_set = 0,
++        .cursor_r = 0,
++        .cursor_g = 0,
++        .cursor_b = 0,
++        .cursor_set = 0,
++        .palette = .{
++            0xFF0000, // Color 0 = red
++            0, 0, 0, 0, 0, 0, 0,
++            0, 0, 0, 0, 0, 0, 0, 0,
++        },
++        .palette_set = 1, // Only color 0 is set
++    };
++    try testing.expectEqual(Result.success, new_with_config(
++        &lib_alloc.test_allocator,
++        80,
++        24,
++        &cfg,
++        &h,
++    ));
++    defer free(h);
++
++    _ = update(h);
++
++    // Color 0 should now be red
++    const c0 = get_palette_color(h, 0);
++    try testing.expectEqual(@as(u32, 0xFF0000), c0);
++
++    // Color 1 should still be the default (not overridden)
++    const c1 = get_palette_color(h, 1);
++    try testing.expect(c1 != 0);
++}
++
 +test "null safety" {
 +    free(null);
-+    write(null, "x", 1);
++    _ = write(null, "x", 1);
 +    try std.testing.expectEqual(Result.invalid_value, resize(null, 10, 10));
 +    try std.testing.expectEqual(@as(u8, 0), update(null));
 +    try std.testing.expectEqual(@as(c_int, -1), get_viewport(null, undefined, 0));
@@ -1296,30 +2077,14 @@ index 000000000..f25e12a69
 +    try std.testing.expectEqual(@as(c_int, 0), get_rows(null));
 +    try std.testing.expectEqual(@as(u32, 0), get_bell_count(null));
 +    try std.testing.expect(!has_title_changed(null));
++    try std.testing.expectEqual(@as(u32, 0), get_modes(null));
++    try std.testing.expectEqual(@as(u32, 0), get_palette_color(null, 0));
++    try std.testing.expect(!has_response(null));
++    try std.testing.expectEqual(@as(c_int, 0), read_response(null, undefined, 0));
++    try std.testing.expect(!is_row_wrapped(null, 0));
++    try std.testing.expect(!is_scrollback_row_wrapped(null, 0));
++    try std.testing.expectEqual(@as(c_int, 0), get_scrollback_grapheme(null, 0, 0, undefined, 0));
 +}
-diff --git a/src/terminal/color.zig b/src/terminal/color.zig
-index 3b806f8b8..a3d4b63b8 100644
---- a/src/terminal/color.zig
-+++ b/src/terminal/color.zig
-@@ -97,12 +97,12 @@ pub fn generate256Color(
-     const base8_lab: [8]LAB = base8: {
-         var base8: [8]LAB = .{
-             .fromRgb(bg),
--            LAB.fromRgb(base[1]),
--            LAB.fromRgb(base[2]),
--            LAB.fromRgb(base[3]),
--            LAB.fromRgb(base[4]),
--            LAB.fromRgb(base[5]),
--            LAB.fromRgb(base[6]),
-+            .fromRgb(base[1]),
-+            .fromRgb(base[2]),
-+            .fromRgb(base[3]),
-+            .fromRgb(base[4]),
-+            .fromRgb(base[5]),
-+            .fromRgb(base[6]),
-             .fromRgb(fg),
-         };
- 
 diff --git a/src/terminal/osc/parsers/semantic_prompt.zig b/src/terminal/osc/parsers/semantic_prompt.zig
 index d3a117515..2ea7fd91c 100644
 --- a/src/terminal/osc/parsers/semantic_prompt.zig

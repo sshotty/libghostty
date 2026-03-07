@@ -41,4 +41,21 @@ class Cursor {
 }
 
 /// Terminal cursor rendering shape.
-enum CursorShape { block, underline, bar, blockHollow }
+enum CursorShape {
+  block(0),
+  bar(1),
+  underline(2),
+  blockHollow(3);
+
+  static final _nativeMap = {
+    for (final shape in values) shape.nativeValue: shape,
+  };
+
+  @internal
+  final int nativeValue;
+
+  const CursorShape(this.nativeValue);
+
+  @internal
+  static CursorShape fromNative(int value) => _nativeMap[value] ?? .block;
+}

@@ -1,3 +1,5 @@
+import 'package:meta/meta.dart';
+
 /// macOS Option key behavior for terminal input.
 ///
 /// Controls whether the macOS Option key is treated as Alt for keyboard
@@ -9,7 +11,6 @@
 /// ```dart
 /// encoder.setOptionAsAlt(OptionAsAlt.left);
 /// ```
-// Maps 1:1 with the native GhosttyOptionAsAlt enum.
 enum OptionAsAlt {
   /// Option key produces macOS special characters (default behavior).
   none(0),
@@ -23,6 +24,7 @@ enum OptionAsAlt {
   /// Only the right Option key is treated as Alt.
   right(3);
 
+  @internal
   final int nativeValue;
 
   const OptionAsAlt(this.nativeValue);

@@ -1,6 +1,6 @@
 import '../bindings/bindings.dart';
+import '../disposable.dart';
 import '../enums/osc_command_type.dart';
-import '../exceptions.dart';
 
 /// The result of parsing an OSC sequence.
 class OscCommand {
@@ -28,23 +28,15 @@ class OscCommand {
 ///
 /// parser.dispose();
 /// ```
-class OscParser {
+class OscParser extends Disposable {
   static final _finalizer = Finalizer<int>(
     (handle) => bindings.oscFree(handle),
   );
 
   final int _handle;
-  var _disposed = false;
 
-  OscParser() : _handle = bindings.oscNew() {
+  OscParser() : _handle = bindings.oscNew(), super('OscParser') {
     _finalizer.attach(this, _handle, detach: this);
-  }
-
-  void dispose() {
-    if (_disposed) return;
-    _disposed = true;
-    _finalizer.detach(this);
-    bindings.oscFree(_handle);
   }
 
   /// Finalizes parsing and returns the parsed command.
@@ -52,7 +44,7 @@ class OscParser {
   /// [terminator] is the byte that ended the sequence: `0x07` for BEL,
   /// `0x5C` for ST.
   OscCommand end(int terminator) {
-    _ensureNotDisposed();
+    ensureNotDisposed();
     final result = bindings.oscEnd(_handle, terminator);
     return OscCommand(
       type: OscCommandType.fromNative(result.commandType),
@@ -61,23 +53,25 @@ class OscParser {
   }
 
   void feedByte(int byte) {
-    _ensureNotDisposed();
+    ensureNotDisposed();
     bindings.oscFeedByte(_handle, byte);
   }
 
   void feedBytes(List<int> bytes) {
-    _ensureNotDisposed();
+    ensureNotDisposed();
     for (final byte in bytes) {
       bindings.oscFeedByte(_handle, byte);
     }
   }
 
-  void reset() {
-    _ensureNotDisposed();
-    bindings.oscReset(_handle);
+  @override
+  void releaseResources() {
+    _finalizer.detach(this);
+    bindings.oscFree(_handle);
   }
 
-  void _ensureNotDisposed() {
-    if (_disposed) throw const DisposedException('OscParser');
+  void reset() {
+    ensureNotDisposed();
+    bindings.oscReset(_handle);
   }
 }

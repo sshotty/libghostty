@@ -36,20 +36,4 @@ class TerminalDump {
     }
     return lines;
   }
-
-  static List<String> viewportContent(
-    Terminal terminal, {
-    int scrollOffset = 0,
-  }) {
-    final viewport = TerminalViewport(
-      screen: terminal.screen,
-      scrollback: terminal.scrollback,
-      scrollOffset: scrollOffset,
-    );
-    final lines = <String>[];
-    for (var row = 0; row < viewport.rows; row++) {
-      lines.add(viewport.lineAt(row).text);
-    }
-    return lines;
-  }
 }

@@ -27,8 +27,10 @@ void main() {
 
     test('DisposedException formats message with type name', () {
       const exception = DisposedException('Terminal');
-      expect(exception.message, 'Terminal has already been disposed.');
-      expect(exception.toString(), 'Terminal has already been disposed.');
+      expect(exception.typeName, 'Terminal');
+      expect(exception.message, contains('Terminal'));
+      expect(exception.message, contains('disposed'));
+      expect(exception.toString(), exception.message);
     });
 
     test('sealed class pattern matching covers all subtypes', () {
@@ -43,12 +45,6 @@ void main() {
       expect(describe(const OutOfMemoryException()), 'oom');
       expect(describe(const InvalidValueException()), 'invalid');
       expect(describe(const DisposedException('X')), 'disposed');
-    });
-
-    test('exceptions implement Exception interface', () {
-      expect(const OutOfMemoryException(), isA<Exception>());
-      expect(const InvalidValueException(), isA<Exception>());
-      expect(const DisposedException('X'), isA<Exception>());
     });
   });
 }

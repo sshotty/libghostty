@@ -4,7 +4,7 @@ import 'dart:typed_data';
 
 import 'package:libghostty/libghostty.dart';
 
-void main() {
+Future<void> main() async {
   final terminal = Terminal(cols: 80, rows: 24);
 
   final logLines = [
@@ -22,10 +22,8 @@ void main() {
     if (text.isEmpty) break;
 
     final color = switch (terminal.screen.cellAt(row, 0).foreground) {
-      PaletteColor(index: 2) => 'GREEN',
-      PaletteColor(index: 3) => 'YELLOW',
-      PaletteColor(index: 1) => 'RED',
-      _ => 'DEFAULT',
+      DefaultColor() => 'DEFAULT',
+      RgbColor(:final r, :final g, :final b) => 'RGB($r,$g,$b)',
     };
 
     print('[$color] $text');

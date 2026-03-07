@@ -11,17 +11,14 @@ import 'package:meta/meta.dart';
 /// Sealed to enable exhaustive pattern matching:
 ///
 /// ```dart
-/// final color = cell.style.fg;
+/// final color = cell.foreground;
 /// switch (color) {
 ///   case DefaultColor():
 ///     print('default');
-///   case PaletteColor(index: final i):
-///     print('palette $i');
 ///   case RgbColor(r: final r, g: final g, b: final b):
 ///     print('rgb($r, $g, $b)');
 /// }
 /// ```
-// Wraps the native color representation from the C API.
 @immutable
 sealed class CellColor {
   const CellColor();
@@ -74,40 +71,19 @@ class DefaultColor extends CellColor {
   String toString() => 'DefaultColor()';
 }
 
-/// A color from the 256-color palette (indices 0-255).
-///
-/// Indices 0-7 are standard colors, 8-15 are bright colors, 16-231 are
-/// a 6x6x6 color cube, and 232-255 are grayscale.
-///
-/// ```dart
-/// const red = PaletteColor(NamedColor.red);
-/// print(red.index); // 1
-/// ```
-// Wraps the native GhosttyColorPaletteIndex type.
-class PaletteColor extends CellColor {
-  final int index;
-
-  const PaletteColor(this.index);
-
-  @override
-  int get hashCode => Object.hash(PaletteColor, index);
-
-  @override
-  bool operator ==(Object other) =>
-      other is PaletteColor && other.index == index;
-
-  @override
-  String toString() => 'PaletteColor($index)';
-}
-
 /// Standard ANSI terminal color palette indices (0-15).
 ///
 /// Provides named constants for the 8 standard and 8 bright colors
-/// defined by the terminal color palette.
+/// defined by the terminal color palette. Used with [generate256Color]
+/// and palette configuration APIs.
 ///
 /// ```dart
-/// const fg = PaletteColor(NamedColor.red);
-/// const bg = PaletteColor(NamedColor.brightBlue);
+/// final palette = generate256Color(
+///   base: base16Colors,
+///   background: bg,
+///   foreground: fg,
+/// );
+/// final red = palette[NamedColor.red];
 /// ```
 abstract final class NamedColor {
   static const black = 0;

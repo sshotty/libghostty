@@ -4,27 +4,9 @@ import '../enums/underline_style.dart' show UnderlineStyle;
 import 'cell.dart';
 import 'line.dart';
 
-Cell rawCellToCell(
-  RawCell raw, {
-  required RgbColor defaultFg,
-  required RgbColor defaultBg,
-  String? contentOverride,
-}) {
-  if (raw.codepoint == 0) return Cell.empty;
-
-  final fg = RgbColor(raw.fgR, raw.fgG, raw.fgB);
-  final bg = RgbColor(raw.bgR, raw.bgG, raw.bgB);
-
-  return Cell(
-    content: contentOverride ?? String.fromCharCode(raw.codepoint),
-    foreground: fg == defaultFg ? const DefaultColor() : fg,
-    background: bg == defaultBg ? const DefaultColor() : bg,
-    style: _styleFromFlags(raw.flags, raw.underlineStyle),
-    isWide: raw.width > 1,
-  );
-}
-
 CellStyle _styleFromFlags(int flags, int underlineStyle) {
+  if (flags == 0 && underlineStyle == 0) return const CellStyle();
+
   return CellStyle(
     bold: flags & CellFlags.bold != 0,
     italic: flags & CellFlags.italic != 0,
@@ -38,22 +20,23 @@ CellStyle _styleFromFlags(int flags, int underlineStyle) {
   );
 }
 
-/// [Screen] backed by the terminal's render state via FFI bindings.
+/// [Screen] backed by the terminal's render state via the bindings
+/// abstraction layer. Used on both native and WASM platforms.
 ///
 /// Lazily fetches the viewport grid on first access and caches lines
-/// until [invalidate] is called. Used on both native and WASM platforms
-/// through the bindings abstraction layer.
-class NativeScreen implements Screen {
+/// until [invalidate] is called.
+class BindingsScreen implements Screen {
   final int _handle;
   final RgbColor _defaultFg;
   final RgbColor _defaultBg;
 
   var _cachedCols = 0;
   var _cachedRows = 0;
-  List<RawCell>? _viewport;
+  DirtyState _dirtyState = DirtyState.clean;
+  RawCells? _viewport;
   List<Line?>? _cachedLines;
 
-  NativeScreen(
+  BindingsScreen(
     this._handle, {
     required RgbColor defaultFg,
     required RgbColor defaultBg,
@@ -61,10 +44,15 @@ class NativeScreen implements Screen {
        _defaultBg = defaultBg;
 
   @override
-  int get cols => bindings.renderStateGetCols(_handle);
+  int get cols => _viewport != null ? _cachedCols : _freshCols();
 
   @override
-  int get rows => bindings.renderStateGetRows(_handle);
+  DirtyState get dirtyState => _dirtyState;
+
+  set dirtyState(DirtyState value) => _dirtyState = value;
+
+  @override
+  int get rows => _viewport != null ? _cachedRows : _freshRows();
 
   @override
   Cell cellAt(int row, int col) {
@@ -78,13 +66,19 @@ class NativeScreen implements Screen {
     final idx = row * _cachedCols + col;
     if (idx < 0 || idx >= _viewport!.length) return Cell.empty;
 
-    return _resolveCell(_viewport![idx], row, col);
+    return _resolveCell(idx, row, col);
   }
 
   void invalidate() {
     _viewport = null;
     _cachedLines = null;
   }
+
+  @override
+  bool isRowDirty(int row) => bindings.renderStateIsRowDirty(_handle, row);
+
+  @override
+  bool isRowWrapped(int row) => bindings.renderStateIsRowWrapped(_handle, row);
 
   @override
   Line lineAt(int row) {
@@ -102,7 +96,7 @@ class NativeScreen implements Screen {
     final end = start + _cachedCols;
     final line = Line([
       for (var i = start; i < end && i < _viewport!.length; i++)
-        _resolveCell(_viewport![i], row, i - start),
+        _resolveCell(i, row, i - start),
     ]);
 
     lines[row] = line;
@@ -112,8 +106,8 @@ class NativeScreen implements Screen {
   void _ensureViewport() {
     if (_viewport != null) return;
 
-    _cachedCols = cols;
-    _cachedRows = rows;
+    _cachedCols = _freshCols();
+    _cachedRows = _freshRows();
     _viewport = bindings.renderStateGetViewport(
       _handle,
       _cachedCols,
@@ -121,23 +115,46 @@ class NativeScreen implements Screen {
     );
   }
 
-  Cell _resolveCell(RawCell raw, int row, int col) {
+  int _freshCols() => bindings.renderStateGetCols(_handle);
+
+  int _freshRows() => bindings.renderStateGetRows(_handle);
+
+  Cell _resolveCell(int index, int row, int col) {
+    final vp = _viewport!;
     String? contentOverride;
 
-    if (raw.graphemeLen > 0) {
+    if (vp.graphemeLen(index) > 0) {
       final codepoints = bindings.renderStateGetGrapheme(_handle, row, col);
       if (codepoints.isNotEmpty) {
         contentOverride = String.fromCharCodes(codepoints);
       }
     }
 
-    return rawCellToCell(
-      raw,
+    return vp.cellAt(
+      index,
       defaultFg: _defaultFg,
       defaultBg: _defaultBg,
       contentOverride: contentOverride,
     );
   }
+}
+
+/// Result of [Terminal]'s render state update.
+enum DirtyState {
+  /// Nothing changed since the last update.
+  clean,
+
+  /// Some rows changed — check [Screen.isRowDirty] per row.
+  partial,
+
+  /// Everything changed — skip per-row checks, rebuild all rows.
+  full;
+
+  factory DirtyState.fromNative(int value) => switch (value) {
+    0 => DirtyState.clean,
+    1 => DirtyState.partial,
+    _ => DirtyState.full,
+  };
 }
 
 /// Live view of a terminal screen buffer.
@@ -150,11 +167,65 @@ class NativeScreen implements Screen {
 /// }
 /// ```
 abstract class Screen {
+  /// Number of columns in the terminal grid.
   int get cols;
 
+  /// Dirty state from the most recent render state update.
+  DirtyState get dirtyState;
+
+  /// Number of rows in the terminal grid.
   int get rows;
 
+  /// Returns the cell at the given [row] and [col], or [Cell.empty] if
+  /// out of bounds.
   Cell cellAt(int row, int col);
 
+  /// Whether [row] has changed since the last render state update.
+  bool isRowDirty(int row);
+
+  /// Whether [row] soft-wraps into the next row.
+  bool isRowWrapped(int row);
+
+  /// Returns all cells in [row] as a [Line].
   Line lineAt(int row);
+}
+
+extension RawCellsExtension on RawCells {
+  Cell cellAt(
+    int index, {
+    required RgbColor defaultFg,
+    required RgbColor defaultBg,
+    String? contentOverride,
+  }) {
+    final cp = codepoint(index);
+    if (cp == 0) return Cell.empty;
+
+    final fr = fgR(index);
+    final fg = fgG(index);
+    final fb = fgB(index);
+    final br = bgR(index);
+    final bg = bgG(index);
+    final bb = bgB(index);
+
+    final fgColor = fr == defaultFg.r && fg == defaultFg.g && fb == defaultFg.b
+        ? const DefaultColor()
+        : RgbColor(fr, fg, fb);
+    final bgColor = br == defaultBg.r && bg == defaultBg.g && bb == defaultBg.b
+        ? const DefaultColor()
+        : RgbColor(br, bg, bb);
+
+    final CellColor? ulColor = ulSet(index) != 0
+        ? RgbColor(ulR(index), ulG(index), ulB(index))
+        : null;
+
+    return Cell(
+      content: contentOverride ?? String.fromCharCode(cp),
+      foreground: fgColor,
+      background: bgColor,
+      style: _styleFromFlags(flags(index), underlineStyle(index)),
+      wide: CellWidth.fromNative(wide(index)),
+      semanticContent: SemanticContent.fromNative(semanticContent(index)),
+      underlineColor: ulColor,
+    );
+  }
 }

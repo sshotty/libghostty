@@ -1,3 +1,5 @@
+import 'package:meta/meta.dart';
+
 /// Physical key codes for layout-independent keyboard input.
 ///
 /// Based on the W3C UI Events KeyboardEvent code standard. Each value
@@ -6,12 +8,8 @@
 /// platform.
 ///
 /// ```dart
-/// final key = Key.fromNative(event.keyCode);
-/// if (key == Key.enter) {
-///   print('Enter pressed');
-/// }
+/// event.key = Key.enter;
 /// ```
-// Maps 1:1 with the native GhosttyKey enum.
 enum Key {
   unidentified,
   backquote,
@@ -190,8 +188,10 @@ enum Key {
   cut,
   paste;
 
+  @internal
   int get nativeValue => index;
 
+  @internal
   static Key fromNative(int value) {
     if (value >= 0 && value < Key.values.length) {
       return Key.values[value];

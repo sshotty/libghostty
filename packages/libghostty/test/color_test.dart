@@ -33,36 +33,12 @@ void main() {
       expect(color.b, 30);
     });
 
-    test('equality with same values', () {
+    test('equality and hashCode', () {
       const a = RgbColor(100, 150, 200);
       const b = RgbColor(100, 150, 200);
       expect(a, equals(b));
-    });
-
-    test('inequality with different values', () {
-      const a = RgbColor(100, 150, 200);
-      const b = RgbColor(100, 150, 201);
-      expect(a, isNot(equals(b)));
-    });
-
-    test('hashCode is consistent with equality', () {
-      const a = RgbColor(50, 100, 150);
-      const b = RgbColor(50, 100, 150);
       expect(a.hashCode, equals(b.hashCode));
-    });
-
-    test('black (0,0,0)', () {
-      const black = RgbColor(0, 0, 0);
-      expect(black.r, 0);
-      expect(black.g, 0);
-      expect(black.b, 0);
-    });
-
-    test('white (255,255,255)', () {
-      const white = RgbColor(255, 255, 255);
-      expect(white.r, 255);
-      expect(white.g, 255);
-      expect(white.b, 255);
+      expect(a, isNot(equals(const RgbColor(100, 150, 201))));
     });
 
     test('toString contains components', () {

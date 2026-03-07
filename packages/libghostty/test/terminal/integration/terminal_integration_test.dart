@@ -84,24 +84,27 @@ void main() {
       final cell = terminal.screen.cellAt(0, 0);
       final result = switch (cell.foreground) {
         DefaultColor() => 'default',
-        PaletteColor(index: final i) => 'palette:$i',
         RgbColor(:final r, :final g, :final b) => 'rgb:$r,$g,$b',
       };
       expect(result, 'rgb:100,150,200');
     });
 
     test('title change via OSC', () {
-      String? title;
-      terminal.onTitleChanged.listen((t) => title = t);
+      String? received;
+      terminal.onEvent.listen((e) {
+        if (e case TitleChanged(:final title)) received = title;
+      });
       terminal.write(
         Uint8List.fromList('\x1b]0;My Terminal Title\x07'.codeUnits),
       );
-      expect(title, 'My Terminal Title');
+      expect(received, 'My Terminal Title');
     });
 
     test('bell notification', () {
       var bellCount = 0;
-      terminal.onBell.listen((_) => bellCount++);
+      terminal.onEvent.listen((e) {
+        if (e is BellReceived) bellCount++;
+      });
       terminal.write(Uint8List.fromList([0x07, 0x07, 0x07]));
       expect(bellCount, 3);
     });
@@ -165,8 +168,16 @@ void main() {
 
     test('complete terminal session simulation', () {
       final events = <String>[];
-      terminal.onTitleChanged.listen((t) => events.add('title:$t'));
-      terminal.onBell.listen((_) => events.add('bell'));
+      terminal.onEvent.listen((e) {
+        switch (e) {
+          case TitleChanged(:final title):
+            events.add('title:$title');
+          case BellReceived():
+            events.add('bell');
+          default:
+            break;
+        }
+      });
 
       terminal.write(Uint8List.fromList('\x1b]0;bash\x07'.codeUnits));
       terminal.write(Uint8List.fromList('\$ ls\r\n'.codeUnits));
