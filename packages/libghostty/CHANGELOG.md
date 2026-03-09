@@ -1,31 +1,43 @@
 # Changelog
 
+## 0.0.3
+
+### Added
+
+- **iOS simulator support**: prebuilt binaries for `aarch64-ios-simulator`
+  and `x86_64-ios-simulator`.
+
+### Fixed
+
+- **Asset hash validation**: reject prebuilt binaries with no known hash
+  instead of silently accepting them.
+
 ## 0.0.2
 
 ### Added
 
-- **Sealed `TerminalEvent` hierarchy** — typed events (`BellReceived`,
+- **Sealed `TerminalEvent` hierarchy**: typed events (`BellReceived`,
   `TitleChanged`, `CursorChanged`, `MouseShapeChanged`, `ResponseReceived`,
   `ScreenChanged`, `ModeChanged`) replace ad-hoc state polling.
-- **`TerminalOptions`** — configure foreground/background color and scrollback
+- **`TerminalOptions`**: configure foreground/background color and scrollback
   limit at terminal creation.
-- **Mouse support** — `MouseShape` and `MouseTracking` exposed via the
+- **Mouse support**:`MouseShape` and `MouseTracking` exposed via the
   terminal API.
-- **`DirtyState` enum** — `clean`/`partial`/`full` for render-level dirty
+- **`DirtyState` enum**:`clean`/`partial`/`full` for render-level dirty
   tracking on `Screen`.
-- **Reusable viewport buffer** — `Screen` reuses a single buffer across reads,
+- **Reusable viewport buffer**:`Screen` reuses a single buffer across reads,
   reducing per-frame allocations.
-- **Row wrapping detection** — `Screen` and `Scrollback` report whether a row
+- **Row wrapping detection**:`Screen` and `Scrollback` report whether a row
   is soft-wrapped.
-- **Scrollback grapheme support** — `Scrollback` returns full grapheme
+- **Scrollback grapheme support**:`Scrollback` returns full grapheme
   clusters.
-- **`CellWidth` and `SemanticContent`** — new cell metadata types.
-- **256-color palette** — CIELAB interpolation and full 256-color palette
+- **`CellWidth` and `SemanticContent`**: new cell metadata types.
+- **256-color palette**: CIELAB interpolation and full 256-color palette
   generation with base16 theme support.
 
 ### Changed
 
-- **`TerminalViewport` removed** — viewport reading now lives on `Screen`
+- **`TerminalViewport` removed**: viewport reading now lives on `Screen`
   directly.
 - Bumped upstream ghostty to `055ed285`.
 
