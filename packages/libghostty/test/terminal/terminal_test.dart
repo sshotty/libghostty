@@ -12,13 +12,9 @@ void main() {
   group('Terminal', () {
     late Terminal terminal;
 
-    setUp(() {
-      terminal = Terminal(cols: 80, rows: 24);
-    });
+    setUp(() => terminal = Terminal(cols: 80, rows: 24));
 
-    tearDown(() {
-      terminal.dispose();
-    });
+    tearDown(() => terminal.dispose());
 
     test('initial dimensions', () {
       expect(terminal.screen.cols, 80);
@@ -84,6 +80,16 @@ void main() {
         expect(terminal.modes.insertMode, isFalse);
       });
 
+      test('mouseAlternateScroll tracks DECSET 1007', () {
+        expect(terminal.modes.mouseAlternateScroll, isTrue);
+
+        terminal.write(.fromList('\x1b[?1007l'.codeUnits));
+        expect(terminal.modes.mouseAlternateScroll, isFalse);
+
+        terminal.write(.fromList('\x1b[?1007h'.codeUnits));
+        expect(terminal.modes.mouseAlternateScroll, isTrue);
+      });
+
       group('mouseTracking', () {
         test('default is none', () {
           expect(terminal.modes.mouseTracking, MouseTracking.none);
@@ -147,12 +153,12 @@ void main() {
       terminal.write(.fromList('Primary'.codeUnits));
       terminal.write(.fromList('\x1b[?1049h'.codeUnits));
 
-      expect(terminal.modes.alternateScreen, isTrue);
+      expect(terminal.modes.screenMode, ScreenMode.alternate);
       expect(terminal.screen.cellAt(0, 0), Cell.empty);
 
       terminal.write(.fromList('\x1b[?1049l'.codeUnits));
 
-      expect(terminal.modes.alternateScreen, isFalse);
+      expect(terminal.modes.screenMode, ScreenMode.primary);
       expect(terminal.screen.cellAt(0, 0).content, 'P');
     });
 
@@ -227,6 +233,16 @@ void main() {
         expect(count, 0);
       });
 
+      test('ModeChanged carries modes snapshot', () {
+        TerminalModes? received;
+        terminal.onEvent.listen((e) {
+          if (e case ModeChanged(:final modes)) received = modes;
+        });
+        terminal.write(.fromList('\x1b[?2004h'.codeUnits));
+        expect(received, isNotNull);
+        expect(received!.bracketedPaste, isTrue);
+      });
+
       test('ScreenChanged fires on write', () {
         var changeCount = 0;
         terminal.onEvent.listen((e) {
@@ -243,6 +259,17 @@ void main() {
         });
         terminal.resize(cols: 120, rows: 40);
         expect(changeCount, 1);
+      });
+
+      test('ResponseReceived compares bytes', () {
+        final a = ResponseReceived(Uint8List.fromList([1, 2, 3]));
+        final b = ResponseReceived(Uint8List.fromList([1, 2, 3]));
+        final c = ResponseReceived(Uint8List.fromList([1, 2, 4]));
+        final d = ResponseReceived(Uint8List.fromList([1, 2]));
+        expect(a, b);
+        expect(a.hashCode, b.hashCode);
+        expect(a, isNot(c));
+        expect(a, isNot(d));
       });
     });
 

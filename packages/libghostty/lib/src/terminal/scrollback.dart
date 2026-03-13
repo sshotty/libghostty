@@ -4,7 +4,10 @@ import 'cell.dart';
 import 'line.dart';
 import 'screen.dart' show RawCellsExtension;
 
-/// Scrollback history for the primary screen buffer.
+/// Readonly view of terminal scrollback history.
+///
+/// Only the primary screen has scrollback. On the alternate screen,
+/// [length] is always zero.
 abstract class Scrollback {
   /// Total number of scrollback rows available.
   int get length;
@@ -40,7 +43,10 @@ class BindingsScrollback implements Scrollback {
        _defaultBg = defaultBg;
 
   @override
-  int get length => bindings.terminalGetScrollbackLength(_handle);
+  int get length {
+    if (bindings.terminalIsAlternateScreen(_handle)) return 0;
+    return bindings.terminalGetScrollbackLength(_handle);
+  }
 
   @override
   bool isRowWrapped(int index) {
@@ -73,6 +79,7 @@ class BindingsScrollback implements Scrollback {
   }
 
   Cell _resolveCell(RawCells cells, int index, int scrollbackOffset) {
+    String? hyperlink;
     String? contentOverride;
 
     if (cells.graphemeLen(index) > 0) {
@@ -81,13 +88,20 @@ class BindingsScrollback implements Scrollback {
         scrollbackOffset,
         index,
       );
-      if (codepoints.isNotEmpty) {
-        contentOverride = String.fromCharCodes(codepoints);
-      }
+      if (codepoints.isNotEmpty) contentOverride = .fromCharCodes(codepoints);
+    }
+
+    if (cells.hasHyperlink(index) != 0) {
+      hyperlink = bindings.terminalGetScrollbackHyperlink(
+        _handle,
+        scrollbackOffset,
+        index,
+      );
     }
 
     return cells.cellAt(
       index,
+      hyperlink: hyperlink,
       defaultFg: _defaultFg,
       defaultBg: _defaultBg,
       contentOverride: contentOverride,
