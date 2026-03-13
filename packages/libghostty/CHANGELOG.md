@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.0.4
+
+### Added
+
+- **Hyperlink support**: `Cell` and `ScrollbackRow` expose OSC 8 hyperlink
+  URIs via a `hyperlink` field.
+- **Screen mode**: `TerminalModes` exposes `screenMode` to distinguish
+  primary and alternate screen.
+- **Mouse alternate scroll**: `TerminalModes` exposes `mouseAlternateScroll`
+  flag.
+- **Mods toggle operator**: `^` operator on `Mods` for bitwise XOR toggling
+  of modifier flags.
+
+### Fixed
+
+- **Scrollback on alternate screen**: `scrollbackLength` returns zero when
+  the terminal is on the alternate screen instead of stale values.
+
+### Changed
+
+- Bumped upstream ghostty to `04fa71e23`.
+
 ## 0.0.3
 
 ### Added
