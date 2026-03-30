@@ -70,7 +70,7 @@ jobs:
         id: ghostty-cache
         with:
           path: ghostty
-          key: ghostty-src-${{ steps.ghostty.outputs.commit }}-${{ hashFiles('packages/libghostty/patches/*.patch') }}
+          key: ghostty-src-${{ steps.ghostty.outputs.commit }}
       - name: download ghostty source
         if: steps.ghostty-cache.outputs.cache-hit != 'true'
         shell: bash
@@ -79,14 +79,6 @@ jobs:
           mkdir -p ghostty
           tar xzf ghostty.tar.gz -C ghostty --strip-components=1
           rm ghostty.tar.gz
-      - name: apply patches
-        if: steps.ghostty-cache.outputs.cache-hit != 'true'
-        shell: bash
-        run: |
-          for p in packages/libghostty/patches/*.patch; do
-            [ -f "$p" ] || continue
-            git apply --ignore-whitespace --whitespace=nowarn --directory=ghostty "$p"
-          done
       - run: flutter pub get
       - run: dart pub global activate very_good_cli
       - name: run tests
@@ -122,7 +114,7 @@ jobs:
         id: ghostty-cache
         with:
           path: ghostty
-          key: ghostty-src-${{ steps.ghostty.outputs.commit }}-${{ hashFiles('packages/libghostty/patches/*.patch') }}
+          key: ghostty-src-${{ steps.ghostty.outputs.commit }}
       - name: download ghostty source
         if: steps.ghostty-cache.outputs.cache-hit != 'true'
         run: |
@@ -130,13 +122,6 @@ jobs:
           mkdir -p ghostty
           tar xzf ghostty.tar.gz -C ghostty --strip-components=1
           rm ghostty.tar.gz
-      - name: apply patches
-        if: steps.ghostty-cache.outputs.cache-hit != 'true'
-        run: |
-          for p in packages/libghostty/patches/*.patch; do
-            [ -f "$p" ] || continue
-            git apply --ignore-whitespace --whitespace=nowarn --directory=ghostty "$p"
-          done
       - name: isolate from repo git
         run: touch ghostty/.git
       - run: flutter pub get
