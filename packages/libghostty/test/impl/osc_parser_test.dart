@@ -1,4 +1,4 @@
-@Tags(['wasm'])
+@Tags(['ffi'])
 library;
 
 import 'dart:convert';
@@ -7,11 +7,7 @@ import 'package:libghostty/libghostty.dart';
 import 'package:libghostty/src/ffi/libghostty_enums.g.dart' show OscCommandType;
 import 'package:test/test.dart';
 
-import '../helpers/setup.dart';
-
 void main() {
-  setUpAll(setUpWasm);
-
   group('OscParser', () {
     late OscParser parser;
 
@@ -63,6 +59,11 @@ void main() {
       final command = parser.end(0x07);
       expect(command.type, OscCommandType.reportPwd);
       expect(command.windowTitle, isNull);
+    });
+
+    test('double dispose is safe', () {
+      parser.dispose();
+      parser.dispose();
     });
   });
 }

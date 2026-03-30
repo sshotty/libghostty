@@ -1,14 +1,10 @@
-@Tags(['wasm'])
+@Tags(['ffi'])
 library;
 
 import 'package:libghostty/libghostty.dart';
 import 'package:test/test.dart';
 
-import 'helpers/setup.dart';
-
 void main() {
-  setUpAll(setUpWasm);
-
   group('KeyEncoder', () {
     late KeyEncoder encoder;
     late KeyEvent event;
@@ -100,7 +96,6 @@ void main() {
       encoder.setKittyFlags(const KittyKeyFlags.disambiguate());
       encoder.setOptionAsAlt(OptionAsAlt.true$);
     });
-
     test('encodes sequence exceeding initial 128-byte buffer', () {
       encoder.setKittyFlags(const KittyKeyFlags.all());
 
@@ -112,6 +107,12 @@ void main() {
       final result = encoder.encode(event);
       expect(result, isNotEmpty);
       expect(result, startsWith('\x1b'));
+    });
+
+    test('double dispose is safe', () {
+      final e = KeyEncoder();
+      e.dispose();
+      e.dispose();
     });
   });
 }

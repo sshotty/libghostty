@@ -1,17 +1,13 @@
-@Tags(['wasm'])
+@Tags(['ffi'])
 library;
 
 import 'package:libghostty/libghostty.dart';
 import 'package:test/test.dart';
 
-import '../helpers/setup.dart';
-
 Matcher hasTag(SgrAttributeTag tag) =>
     predicate<SgrAttribute>((a) => a.tag == tag, 'has tag $tag');
 
 void main() {
-  setUpAll(setUpWasm);
-
   group('SgrParser', () {
     late SgrParser parser;
 
@@ -115,6 +111,11 @@ void main() {
 
       final second = parser.parse([3]);
       expect(second.first, hasTag(SgrAttributeTag.italic));
+    });
+
+    test('double dispose is safe', () {
+      parser.dispose();
+      parser.dispose();
     });
   });
 }

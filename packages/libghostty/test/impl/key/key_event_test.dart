@@ -1,14 +1,10 @@
-@Tags(['wasm'])
+@Tags(['ffi'])
 library;
 
 import 'package:libghostty/libghostty.dart';
 import 'package:test/test.dart';
 
-import 'helpers/setup.dart';
-
 void main() {
-  setUpAll(setUpWasm);
-
   group('KeyEvent', () {
     late KeyEvent event;
 
@@ -83,6 +79,12 @@ void main() {
       event.key = Key.b;
       expect(event.key, Key.b);
       expect(event.action, KeyAction.press);
+    });
+
+    test('double dispose is safe', () {
+      final e = KeyEvent();
+      e.dispose();
+      e.dispose();
     });
   });
 }
