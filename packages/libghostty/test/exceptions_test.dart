@@ -1,4 +1,4 @@
-import 'package:libghostty/libghostty.dart';
+import 'package:libghostty/src/bindings/types/result.dart';
 import 'package:test/test.dart';
 
 void main() {

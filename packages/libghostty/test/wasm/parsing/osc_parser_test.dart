@@ -4,7 +4,6 @@ library;
 import 'dart:convert';
 
 import 'package:libghostty/libghostty.dart';
-import 'package:libghostty/src/ffi/libghostty_enums.g.dart' show OscCommandType;
 import 'package:test/test.dart';
 
 import '../helpers/setup.dart';

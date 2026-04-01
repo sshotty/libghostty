@@ -23,10 +23,8 @@ export 'src/bindings/types/types.dart'
         MouseFormat,
         MouseTracking,
         NamedColor,
-        NoValueException,
         OptimizeMode,
         OutOfMemoryException,
-        OutOfSpaceException,
         PaletteColor,
         RgbColor,
         Scrollbar,
@@ -48,6 +46,7 @@ export 'src/ffi/libghostty_enums.g.dart'
         MouseAction,
         MouseButton,
         OptionAsAlt,
+        OscCommandType,
         PointTag,
         SgrAttributeTag,
         SizeReportStyle,
@@ -61,7 +60,7 @@ export 'src/impl/key/mods.dart' show Mods;
 export 'src/impl/mouse/mouse_encoder.dart' show MouseEncoder;
 export 'src/impl/mouse/mouse_event.dart' show MouseEvent;
 export 'src/impl/osc_parser.dart' show OscCommand, OscParser;
-export 'src/impl/paste.dart';
+export 'src/impl/paste.dart' show pasteEncode, pasteIsSafe;
 export 'src/impl/sgr_parser.dart' show SgrParser;
 export 'src/impl/terminal/terminal.dart'
     show
@@ -74,4 +73,4 @@ export 'src/impl/terminal/terminal.dart'
         Row,
         Terminal;
 export 'src/impl/terminal/terminal_mode.dart' show TerminalMode;
-export 'src/listenable.dart';
+export 'src/listenable.dart' show Listenable;
