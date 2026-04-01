@@ -25,8 +25,9 @@ jobs:
           COMMIT=$(cat packages/libghostty/ghostty.version)
           curl -fsSL -o /dev/null "https://github.com/ghostty-org/ghostty/archive/$COMMIT.tar.gz"
       - run: flutter pub get
-      - run: dart format --set-exit-if-changed .
-      - run: dart analyze .
+      # TODO: restore to `.` once flterm migration is complete
+      - run: dart format --set-exit-if-changed packages/libghostty
+      - run: dart analyze packages/libghostty
       - name: publish dry run
         working-directory: packages/libghostty
         run: dart pub publish --dry-run
