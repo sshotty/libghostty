@@ -1,58 +1,88 @@
-import 'package:libghostty/libghostty.dart' show CellWidth, Screen;
+import 'package:libghostty/libghostty.dart' show CellWidth, Terminal;
 
-final _isWord = RegExp(r'\w');
+final _defaultWordPattern = RegExp(r'\w');
 
-/// Utilities for querying terminal screen content.
-extension ScreenExtension on Screen {
-  /// Returns the bounds of the terminal line at [row].
+/// Selection and word-boundary helpers for [Terminal].
+///
+/// Provides hit-testing and text navigation operations used by the gesture
+/// detector to resolve click positions into selection ranges. All methods
+/// operate on the current viewport (render state) and handle wide characters
+/// and row wrapping transparently.
+///
+/// ```dart
+/// final terminal = Terminal(rows: 24, cols: 80);
+/// final (start, end) = terminal.wordBoundaryAt(5, 10);
+/// ```
+extension TerminalScreenExtension on Terminal {
+  /// Returns the logical line boundaries for the given viewport [row].
   ///
-  /// Walks up past wrapped predecessors and down past wrapped successors
-  /// to find the full extent of a soft-wrapped line. On the final row,
-  /// [endCol] is the exclusive column after the last content cell rather
-  /// than [cols], so trailing empty cells are excluded.
+  /// A logical line may span multiple viewport rows when soft-wrapped.
+  /// Walks upward from [row] to find the first non-wrapped row, then
+  /// downward to find the last row of the logical line.
+  ///
+  /// `endCol` is the column after the last non-empty cell on the final row,
+  /// trimming trailing empty cells.
+  ///
+  /// Returns [row] clamped to the viewport when out of bounds.
   ({int startRow, int endRow, int endCol}) lineBoundaryAt(int row) {
-    if (row < 0 || row >= rows) {
+    final rs = renderState;
+    if (row < 0 || row >= rs.rows) {
       return (startRow: row, endRow: row, endCol: 0);
     }
     var start = row;
-    while (start > 0 && isRowWrapped(start - 1)) {
+    while (start > 0) {
+      final ref = gridRefAt(col: 0, row: start - 1);
+      final wrap = ref.rowWrap;
+      ref.dispose();
+      if (!wrap) break;
       start--;
     }
     var end = row;
-    while (end < rows - 1 && isRowWrapped(end)) {
+    while (end < rs.rows - 1) {
+      final ref = gridRefAt(col: 0, row: end);
+      final wrap = ref.rowWrap;
+      ref.dispose();
+      if (!wrap) break;
       end++;
     }
-    var endCol = cols;
+    var endCol = rs.cols;
     while (endCol > 0) {
-      final cell = cellAt(end, endCol - 1);
-      if (cell.content.isNotEmpty || cell.wide == CellWidth.spacerTail) break;
+      final ref = gridRefAt(col: endCol - 1, row: end);
+      final hasContent = ref.graphemes.isNotEmpty;
+      final isSpacer = ref.wide == .spacerTail;
+      ref.dispose();
+      if (hasContent || isSpacer) break;
       endCol--;
     }
     return (startRow: start, endRow: end, endCol: endCol);
   }
 
-  /// Snaps [col] to a wide character boundary on [row].
+  /// Snaps a column to a wide-character boundary.
   ///
-  /// When [inclusive] is true (for the leading edge of a selection), snaps
-  /// to the wide character's start column. When false (for the trailing
-  /// exclusive edge), snaps past the wide character's end.
+  /// When [col] lands on the head of a wide character and [inclusive] is true,
+  /// returns the head column. When [inclusive] is false, returns the column
+  /// after the wide character (head + 2). When [col] lands on a spacer tail,
+  /// returns the head column (inclusive) or the column after (exclusive).
   ///
-  /// Returns [col] unchanged for narrow cells or out-of-bounds coordinates.
+  /// Returns [col] unchanged for single-width cells or out-of-bounds input.
   int snapColToWideBoundary(int row, int col, {required bool inclusive}) {
-    if (row < 0 || row >= rows || col < 0 || col >= cols) return col;
-    final cell = cellAt(row, col);
-    if (cell.isWide) return inclusive ? col : col + 2;
-    if (cell.wide == CellWidth.spacerTail) {
-      return inclusive ? col - 1 : col + 1;
-    }
+    final rs = renderState;
+    if (row < 0 || row >= rs.rows || col < 0 || col >= rs.cols) return col;
+    final ref = gridRefAt(col: col, row: row);
+    final w = ref.wide;
+    final isW = ref.isWide;
+    ref.dispose();
+    if (isW) return inclusive ? col : col + 2;
+    if (w == CellWidth.spacerTail) return inclusive ? col - 1 : col + 1;
     return col;
   }
 
-  /// Snaps both columns of a selection range to wide character boundaries.
+  /// Adjusts selection start and end columns to respect wide-character
+  /// boundaries.
   ///
-  /// Determines which column is inclusive (leading edge) vs exclusive
-  /// (trailing edge) based on row/column ordering, then snaps each
-  /// using [snapColToWideBoundary].
+  /// The leading edge (closer to text start) snaps inclusively so the
+  /// full wide character is selected. The trailing edge snaps exclusively
+  /// so it sits just past the wide character.
   (int startCol, int endCol) snapSelectionCols(
     int startRow,
     int startCol,
@@ -75,51 +105,84 @@ extension ScreenExtension on Screen {
     );
   }
 
-  /// Returns the column range `(start, end)` of the word at ([row], [col]).
+  /// Returns the column range of the word at ([row], [col]).
   ///
-  /// The range is inclusive at [start] and exclusive at [end]. If the cell
-  /// is not a word character, returns a single-cell range.
+  /// Expands outward from the clicked cell while adjacent cells match
+  /// [wordPattern] (defaults to `\w`). Wide characters and spacer tails
+  /// are traversed correctly. If the cell at [col] does not match the
+  /// pattern, returns a single-cell (or double-cell for wide characters)
+  /// range.
   ///
-  /// ```dart
-  /// // Screen contains "hello world" on row 0
-  /// final (start, end) = screen.wordBoundaryAt(0, 2);
-  /// // start == 0, end == 5
-  /// ```
-  (int start, int end) wordBoundaryAt(int row, int col) {
-    if (row < 0 || row >= rows) return (col, col + 1);
+  /// Used by the gesture detector for double-click word selection.
+  (int start, int end) wordBoundaryAt(
+    int row,
+    int col, {
+    Pattern? wordPattern,
+  }) {
+    final isWord = wordPattern ?? _defaultWordPattern;
+    final rs = renderState;
+    if (row < 0 || row >= rs.rows) return (col, col + 1);
 
-    final maxCol = cols;
+    final maxCol = rs.cols;
     if (col < 0 || col >= maxCol) return (col, col + 1);
 
-    final snapped = cellAt(row, col).wide == .spacerTail && col > 0
-        ? col - 1
-        : col;
+    int snapped;
+    {
+      final ref = gridRefAt(col: col, row: row);
+      snapped = ref.wide == CellWidth.spacerTail && col > 0 ? col - 1 : col;
+      ref.dispose();
+    }
 
-    final charAtPos = cellAt(row, snapped).content;
-    if (charAtPos.isEmpty || !_isWord.hasMatch(charAtPos)) {
-      final span = cellAt(row, snapped).isWide ? 2 : 1;
+    String contentAt(int c) {
+      final ref = gridRefAt(col: c, row: row);
+      final s = ref.content;
+      ref.dispose();
+      return s;
+    }
+
+    CellWidth wideAt(int c) {
+      final ref = gridRefAt(col: c, row: row);
+      final w = ref.wide;
+      ref.dispose();
+      return w;
+    }
+
+    bool isWideAt(int c) {
+      final ref = gridRefAt(col: c, row: row);
+      final w = ref.isWide;
+      ref.dispose();
+      return w;
+    }
+
+    bool matchesWord(String s) => isWord.matchAsPrefix(s) != null;
+
+    final charAtPos = contentAt(snapped);
+    if (charAtPos.isEmpty || !matchesWord(charAtPos)) {
+      final span = isWideAt(snapped) ? 2 : 1;
       return (snapped, snapped + span);
     }
 
     var start = snapped;
     while (start > 0) {
-      final cell = cellAt(row, start - 1);
-      if (cell.wide == .spacerTail) {
+      final w = wideAt(start - 1);
+      if (w == CellWidth.spacerTail) {
         start--;
         continue;
       }
-      if (cell.content.isEmpty || !_isWord.hasMatch(cell.content)) break;
+      final c = contentAt(start - 1);
+      if (c.isEmpty || !matchesWord(c)) break;
       start--;
     }
 
     var end = snapped + 1;
     while (end < maxCol) {
-      final cell = cellAt(row, end);
-      if (cell.wide == .spacerTail) {
+      final w = wideAt(end);
+      if (w == CellWidth.spacerTail) {
         end++;
         continue;
       }
-      if (cell.content.isEmpty || !_isWord.hasMatch(cell.content)) break;
+      final c = contentAt(end);
+      if (c.isEmpty || !matchesWord(c)) break;
       end++;
     }
 

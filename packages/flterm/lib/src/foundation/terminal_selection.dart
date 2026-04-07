@@ -4,8 +4,21 @@ import 'package:meta/meta.dart';
 
 /// A selected range of terminal cells.
 ///
-/// Normalized bounds are available via [topRow], [topCol], [bottomRow],
-/// [bottomCol] regardless of selection direction.
+/// Stores the anchor point ([startRow], [startCol]) and the moving end
+/// ([endRow], [endCol]) exactly as set by the gesture detector. The
+/// anchor stays fixed while the moving end follows the pointer or
+/// keyboard extension.
+///
+/// Use the normalized accessors ([topRow], [topCol], [bottomRow],
+/// [bottomCol]) to get direction-independent bounds for painting or
+/// text extraction. All column bounds follow the convention: top is
+/// inclusive, bottom is exclusive.
+///
+/// Supports two modes:
+/// - [TerminalSelectionMode.normal]: contiguous text that flows across
+///   lines, like selecting text in a document.
+/// - [TerminalSelectionMode.block]: rectangular column region, where
+///   each row is independently clipped to the same column range.
 ///
 /// ```dart
 /// const selection = TerminalSelection(
@@ -18,10 +31,19 @@ import 'package:meta/meta.dart';
 /// ```
 @immutable
 final class TerminalSelection {
+  /// Row of the anchor point (where the selection started).
   final int startRow;
+
+  /// Column of the anchor point (where the selection started).
   final int startCol;
+
+  /// Row of the moving end (where the pointer or keyboard cursor is).
   final int endRow;
+
+  /// Column of the moving end (where the pointer or keyboard cursor is).
   final int endCol;
+
+  /// Whether this is a normal (linear) or block (rectangular) selection.
   final TerminalSelectionMode mode;
 
   const TerminalSelection({
@@ -74,6 +96,11 @@ final class TerminalSelection {
           mode == other.mode;
 
   /// Returns true if the cell at ([row], [col]) falls within this selection.
+  ///
+  /// In normal mode, cells between the top and bottom bounds are fully
+  /// selected; cells on the top and bottom rows are range-checked against
+  /// their respective column bounds. In block mode, every row is checked
+  /// against [topCol]..[bottomCol].
   bool contains(int row, int col) {
     if (row < topRow || row > bottomRow) return false;
     if (mode == .block) return col >= topCol && col < bottomCol;
@@ -83,12 +110,16 @@ final class TerminalSelection {
     return true;
   }
 
-  /// Returns a new selection with the end point shifted by [dRow] rows
+  /// Returns a new selection with the moving end shifted by [dRow] rows
   /// and [dCol] columns.
   ///
-  /// In normal mode, horizontal movement wraps across rows.
-  /// In block mode, columns clamp without wrapping.
-  /// The result is clamped within [totalCols] columns and [totalRows] rows.
+  /// Used by keyboard-driven selection extension (Shift+Arrow). The anchor
+  /// point is preserved.
+  ///
+  /// In normal mode, horizontal overflow wraps to the next/previous row,
+  /// matching how a cursor moves through text. In block mode, columns
+  /// clamp independently without wrapping. Both modes clamp to within
+  /// [totalCols] columns and [totalRows] rows.
   TerminalSelection moveEnd(
     int dRow,
     int dCol, {
@@ -137,6 +168,10 @@ final class TerminalSelection {
   }
 
   /// Returns a new selection with both rows shifted by [delta].
+  ///
+  /// Used to keep the selection anchored to the same content when the
+  /// viewport scrolls. Positive [delta] shifts the selection downward.
+  /// Returns `this` when [delta] is zero.
   TerminalSelection scroll(int delta) {
     if (delta == 0) return this;
     return TerminalSelection(
@@ -150,10 +185,23 @@ final class TerminalSelection {
 }
 
 /// How a selection region is shaped.
+///
+/// Determines the geometry used by [TerminalSelection.contains] and the
+/// selection painter. Normal mode is the standard default; block mode is
+/// typically activated by holding a modifier key during drag (configured
+/// via [TerminalGestureSettings.blockSelectionModifier]).
 enum TerminalSelectionMode {
-  /// Contiguous text across lines, the standard terminal selection mode.
+  /// Contiguous text that flows across line breaks.
+  ///
+  /// The first row is selected from `topCol` to the end, middle rows are
+  /// fully selected, and the last row is selected from the start to
+  /// `bottomCol`. This is the standard selection mode in most terminals.
   normal,
 
-  /// Rectangular column range across rows (Alt+drag in most terminals).
+  /// Rectangular column range independent of line content.
+  ///
+  /// Every row between `topRow` and `bottomRow` is selected from `topCol`
+  /// to `bottomCol`, forming a visual rectangle. Activated by Alt+drag
+  /// in most desktop terminals.
   block,
 }

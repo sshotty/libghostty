@@ -1,11 +1,10 @@
 import 'package:flutter/services.dart' show PhysicalKeyboardKey;
-import 'package:flutter/widgets.dart' show MouseCursor, SystemMouseCursors;
-import 'package:libghostty/libghostty.dart' show Key, MouseShape;
+import 'package:libghostty/libghostty.dart' show Key;
 
 final Map<int, Key> _codepointToKey = {
   0x20: Key.space,
-  for (var i = 0; i < 26; i++) 0x61 + i: Key.values[Key.keyA.index + i],
-  for (var i = 0; i < 26; i++) 0x41 + i: Key.values[Key.keyA.index + i],
+  for (var i = 0; i < 26; i++) 0x61 + i: Key.values[Key.a.index + i],
+  for (var i = 0; i < 26; i++) 0x41 + i: Key.values[Key.a.index + i],
   for (var i = 0; i < 10; i++) 0x30 + i: Key.values[Key.digit0.index + i],
 };
 
@@ -36,32 +35,32 @@ final Map<PhysicalKeyboardKey, Key> _keyMap = {
   PhysicalKeyboardKey.digit8: Key.digit8,
   PhysicalKeyboardKey.digit9: Key.digit9,
 
-  PhysicalKeyboardKey.keyA: Key.keyA,
-  PhysicalKeyboardKey.keyB: Key.keyB,
-  PhysicalKeyboardKey.keyC: Key.keyC,
-  PhysicalKeyboardKey.keyD: Key.keyD,
-  PhysicalKeyboardKey.keyE: Key.keyE,
-  PhysicalKeyboardKey.keyF: Key.keyF,
-  PhysicalKeyboardKey.keyG: Key.keyG,
-  PhysicalKeyboardKey.keyH: Key.keyH,
-  PhysicalKeyboardKey.keyI: Key.keyI,
-  PhysicalKeyboardKey.keyJ: Key.keyJ,
-  PhysicalKeyboardKey.keyK: Key.keyK,
-  PhysicalKeyboardKey.keyL: Key.keyL,
-  PhysicalKeyboardKey.keyM: Key.keyM,
-  PhysicalKeyboardKey.keyN: Key.keyN,
-  PhysicalKeyboardKey.keyO: Key.keyO,
-  PhysicalKeyboardKey.keyP: Key.keyP,
-  PhysicalKeyboardKey.keyQ: Key.keyQ,
-  PhysicalKeyboardKey.keyR: Key.keyR,
-  PhysicalKeyboardKey.keyS: Key.keyS,
-  PhysicalKeyboardKey.keyT: Key.keyT,
-  PhysicalKeyboardKey.keyU: Key.keyU,
-  PhysicalKeyboardKey.keyV: Key.keyV,
-  PhysicalKeyboardKey.keyW: Key.keyW,
-  PhysicalKeyboardKey.keyX: Key.keyX,
-  PhysicalKeyboardKey.keyY: Key.keyY,
-  PhysicalKeyboardKey.keyZ: Key.keyZ,
+  PhysicalKeyboardKey.keyA: Key.a,
+  PhysicalKeyboardKey.keyB: Key.b,
+  PhysicalKeyboardKey.keyC: Key.c,
+  PhysicalKeyboardKey.keyD: Key.d,
+  PhysicalKeyboardKey.keyE: Key.e,
+  PhysicalKeyboardKey.keyF: Key.f,
+  PhysicalKeyboardKey.keyG: Key.g,
+  PhysicalKeyboardKey.keyH: Key.h,
+  PhysicalKeyboardKey.keyI: Key.i,
+  PhysicalKeyboardKey.keyJ: Key.j,
+  PhysicalKeyboardKey.keyK: Key.k,
+  PhysicalKeyboardKey.keyL: Key.l,
+  PhysicalKeyboardKey.keyM: Key.m,
+  PhysicalKeyboardKey.keyN: Key.n,
+  PhysicalKeyboardKey.keyO: Key.o,
+  PhysicalKeyboardKey.keyP: Key.p,
+  PhysicalKeyboardKey.keyQ: Key.q,
+  PhysicalKeyboardKey.keyR: Key.r,
+  PhysicalKeyboardKey.keyS: Key.s,
+  PhysicalKeyboardKey.keyT: Key.t,
+  PhysicalKeyboardKey.keyU: Key.u,
+  PhysicalKeyboardKey.keyV: Key.v,
+  PhysicalKeyboardKey.keyW: Key.w,
+  PhysicalKeyboardKey.keyX: Key.x,
+  PhysicalKeyboardKey.keyY: Key.y,
+  PhysicalKeyboardKey.keyZ: Key.z,
 
   PhysicalKeyboardKey.altLeft: Key.altLeft,
   PhysicalKeyboardKey.altRight: Key.altRight,
@@ -153,57 +152,29 @@ final Map<PhysicalKeyboardKey, Key> _keyMap = {
 };
 
 final Map<Key, int> _keyToCodepoint = {
-  for (var i = 0; i < 26; i++) Key.values[Key.keyA.index + i]: 0x61 + i,
+  for (var i = 0; i < 26; i++) Key.values[Key.a.index + i]: 0x61 + i,
   for (var i = 0; i < 10; i++) Key.values[Key.digit0.index + i]: 0x30 + i,
 };
 
-MouseCursor cursorFromMouseShape(MouseShape shape) {
-  return switch (shape) {
-    .defaultCursor => SystemMouseCursors.basic,
-    .contextMenu => SystemMouseCursors.contextMenu,
-    .help => SystemMouseCursors.help,
-    .pointer => SystemMouseCursors.click,
-    .progress => SystemMouseCursors.progress,
-    .wait => SystemMouseCursors.wait,
-    .cell => SystemMouseCursors.cell,
-    .crosshair => SystemMouseCursors.precise,
-    .text => SystemMouseCursors.text,
-    .verticalText => SystemMouseCursors.verticalText,
-    .alias => SystemMouseCursors.alias,
-    .copy => SystemMouseCursors.copy,
-    .move => SystemMouseCursors.move,
-    .noDrop => SystemMouseCursors.noDrop,
-    .notAllowed => SystemMouseCursors.forbidden,
-    .grab => SystemMouseCursors.grab,
-    .grabbing => SystemMouseCursors.grabbing,
-    .allScroll => SystemMouseCursors.allScroll,
-    .colResize => SystemMouseCursors.resizeColumn,
-    .rowResize => SystemMouseCursors.resizeRow,
-    .nResize => SystemMouseCursors.resizeUp,
-    .eResize => SystemMouseCursors.resizeRight,
-    .sResize => SystemMouseCursors.resizeDown,
-    .wResize => SystemMouseCursors.resizeLeft,
-    .neResize => SystemMouseCursors.resizeUpRight,
-    .nwResize => SystemMouseCursors.resizeUpLeft,
-    .seResize => SystemMouseCursors.resizeDownRight,
-    .swResize => SystemMouseCursors.resizeDownLeft,
-    .ewResize ||
-    .nsResize ||
-    .neswResize ||
-    .nwseResize => SystemMouseCursors.basic,
-    .zoomIn => SystemMouseCursors.zoomIn,
-    .zoomOut => SystemMouseCursors.zoomOut,
-  };
-}
-
-/// Returns the [Key] for [codepoint], or null if unmapped.
+/// Maps a Unicode [codepoint] to the corresponding libghostty [Key].
+///
+/// Covers ASCII letters (both cases map to the lowercase key), digits,
+/// and space. Returns null for codepoints outside these ranges.
 Key? keyFromCodepoint(int codepoint) => _codepointToKey[codepoint];
 
-/// Returns the [Key] for [physical], or [Key.unidentified] if unmapped.
+/// Maps a Flutter [PhysicalKeyboardKey] to the corresponding libghostty [Key].
+///
+/// Covers the full US keyboard layout including function keys (F1-F24),
+/// numpad, navigation keys, modifier keys, and international keys.
+/// Returns [Key.unidentified] for unmapped physical keys.
 Key keyFromPhysical(PhysicalKeyboardKey physical) {
   return _keyMap[physical] ?? .unidentified;
 }
 
 /// Returns the lowercase ASCII codepoint for [key], or 0 for non-character
 /// keys.
+///
+/// Used by the key encoder to determine the unshifted codepoint that
+/// libghostty expects for keyboard input encoding. Only letter and digit
+/// keys produce a non-zero result.
 int unshiftedCodepointForKey(Key key) => _keyToCodepoint[key] ?? 0;

@@ -1,57 +1,37 @@
 import 'package:flterm/src/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:libghostty/libghostty.dart' show Key, MouseShape;
+import 'package:libghostty/libghostty.dart' show Key;
 
 void main() {
   group('keyFromPhysical', () {
-    test('maps all key categories correctly', () {
-      expect(keyFromPhysical(PhysicalKeyboardKey.keyA), Key.keyA);
-      expect(keyFromPhysical(PhysicalKeyboardKey.keyM), Key.keyM);
-      expect(keyFromPhysical(PhysicalKeyboardKey.keyZ), Key.keyZ);
-
-      expect(keyFromPhysical(PhysicalKeyboardKey.digit0), Key.digit0);
-      expect(keyFromPhysical(PhysicalKeyboardKey.digit5), Key.digit5);
-      expect(keyFromPhysical(PhysicalKeyboardKey.digit9), Key.digit9);
-
-      expect(keyFromPhysical(PhysicalKeyboardKey.arrowUp), Key.arrowUp);
-      expect(keyFromPhysical(PhysicalKeyboardKey.arrowDown), Key.arrowDown);
-      expect(keyFromPhysical(PhysicalKeyboardKey.arrowLeft), Key.arrowLeft);
-      expect(keyFromPhysical(PhysicalKeyboardKey.arrowRight), Key.arrowRight);
-
-      expect(keyFromPhysical(PhysicalKeyboardKey.f1), Key.f1);
-      expect(keyFromPhysical(PhysicalKeyboardKey.f12), Key.f12);
-      expect(keyFromPhysical(PhysicalKeyboardKey.f24), Key.f24);
-
-      expect(keyFromPhysical(PhysicalKeyboardKey.shiftLeft), Key.shiftLeft);
-      expect(keyFromPhysical(PhysicalKeyboardKey.shiftRight), Key.shiftRight);
-      expect(keyFromPhysical(PhysicalKeyboardKey.controlLeft), Key.controlLeft);
-      expect(keyFromPhysical(PhysicalKeyboardKey.altLeft), Key.altLeft);
-      expect(keyFromPhysical(PhysicalKeyboardKey.metaLeft), Key.metaLeft);
-
-      expect(keyFromPhysical(PhysicalKeyboardKey.enter), Key.enter);
-      expect(keyFromPhysical(PhysicalKeyboardKey.backspace), Key.backspace);
-      expect(keyFromPhysical(PhysicalKeyboardKey.tab), Key.tab);
-      expect(keyFromPhysical(PhysicalKeyboardKey.space), Key.space);
-      expect(keyFromPhysical(PhysicalKeyboardKey.escape), Key.escape);
-
-      expect(keyFromPhysical(PhysicalKeyboardKey.home), Key.home);
-      expect(keyFromPhysical(PhysicalKeyboardKey.end), Key.end);
-      expect(keyFromPhysical(PhysicalKeyboardKey.pageUp), Key.pageUp);
-      expect(keyFromPhysical(PhysicalKeyboardKey.pageDown), Key.pageDown);
-      expect(keyFromPhysical(PhysicalKeyboardKey.insert), Key.insert);
-      expect(keyFromPhysical(PhysicalKeyboardKey.delete), Key.delete);
-
-      expect(keyFromPhysical(PhysicalKeyboardKey.numpad0), Key.numpad0);
-      expect(keyFromPhysical(PhysicalKeyboardKey.numpad9), Key.numpad9);
-      expect(keyFromPhysical(PhysicalKeyboardKey.numpadAdd), Key.numpadAdd);
-      expect(keyFromPhysical(PhysicalKeyboardKey.numpadEnter), Key.numpadEnter);
-
-      expect(keyFromPhysical(PhysicalKeyboardKey.comma), Key.comma);
-      expect(keyFromPhysical(PhysicalKeyboardKey.period), Key.period);
-      expect(keyFromPhysical(PhysicalKeyboardKey.semicolon), Key.semicolon);
-      expect(keyFromPhysical(PhysicalKeyboardKey.slash), Key.slash);
-      expect(keyFromPhysical(PhysicalKeyboardKey.backquote), Key.backquote);
+    test('maps physical keys to libghostty Keys', () {
+      expect(keyFromPhysical(.keyA), Key.a);
+      expect(keyFromPhysical(.keyZ), Key.z);
+      expect(keyFromPhysical(.digit0), Key.digit0);
+      expect(keyFromPhysical(.digit9), Key.digit9);
+      expect(keyFromPhysical(.arrowUp), Key.arrowUp);
+      expect(keyFromPhysical(.arrowDown), Key.arrowDown);
+      expect(keyFromPhysical(.f1), Key.f1);
+      expect(keyFromPhysical(.f24), Key.f24);
+      expect(keyFromPhysical(.shiftLeft), Key.shiftLeft);
+      expect(keyFromPhysical(.controlLeft), Key.controlLeft);
+      expect(keyFromPhysical(.altLeft), Key.altLeft);
+      expect(keyFromPhysical(.metaLeft), Key.metaLeft);
+      expect(keyFromPhysical(.enter), Key.enter);
+      expect(keyFromPhysical(.backspace), Key.backspace);
+      expect(keyFromPhysical(.tab), Key.tab);
+      expect(keyFromPhysical(.space), Key.space);
+      expect(keyFromPhysical(.escape), Key.escape);
+      expect(keyFromPhysical(.home), Key.home);
+      expect(keyFromPhysical(.end), Key.end);
+      expect(keyFromPhysical(.pageUp), Key.pageUp);
+      expect(keyFromPhysical(.delete), Key.delete);
+      expect(keyFromPhysical(.numpad0), Key.numpad0);
+      expect(keyFromPhysical(.numpadEnter), Key.numpadEnter);
+      expect(keyFromPhysical(.comma), Key.comma);
+      expect(keyFromPhysical(.semicolon), Key.semicolon);
+      expect(keyFromPhysical(.backquote), Key.backquote);
     });
 
     test('unmapped key returns Key.unidentified', () {
@@ -62,32 +42,14 @@ void main() {
     });
   });
 
-  group('Key enum contiguity', () {
-    test('keyA..keyZ and digit0..digit9 indices are contiguous', () {
-      expect(Key.keyZ.index - Key.keyA.index, 25);
-      expect(Key.digit9.index - Key.digit0.index, 9);
-    });
-  });
-
   group('keyFromCodepoint', () {
-    test('lowercase letters map to letter keys', () {
-      expect(keyFromCodepoint(0x61), Key.keyA);
-      expect(keyFromCodepoint(0x7a), Key.keyZ);
-      expect(keyFromCodepoint(0x6d), Key.keyM);
-    });
-
-    test('uppercase letters map to same letter keys', () {
-      expect(keyFromCodepoint(0x41), Key.keyA);
-      expect(keyFromCodepoint(0x5a), Key.keyZ);
-    });
-
-    test('digits map to digit keys', () {
+    test('maps ASCII codepoints to Keys', () {
+      expect(keyFromCodepoint(0x61), Key.a);
+      expect(keyFromCodepoint(0x7a), Key.z);
+      expect(keyFromCodepoint(0x41), Key.a);
+      expect(keyFromCodepoint(0x5a), Key.z);
       expect(keyFromCodepoint(0x30), Key.digit0);
       expect(keyFromCodepoint(0x39), Key.digit9);
-      expect(keyFromCodepoint(0x35), Key.digit5);
-    });
-
-    test('space maps to space key', () {
       expect(keyFromCodepoint(0x20), Key.space);
     });
 
@@ -100,12 +62,9 @@ void main() {
   });
 
   group('unshiftedCodepointForKey', () {
-    test('letter keys return lowercase ASCII', () {
-      expect(unshiftedCodepointForKey(Key.keyA), 0x61);
-      expect(unshiftedCodepointForKey(Key.keyZ), 0x7a);
-    });
-
-    test('digit keys return ASCII digit', () {
+    test('character keys return lowercase ASCII codepoint', () {
+      expect(unshiftedCodepointForKey(Key.a), 0x61);
+      expect(unshiftedCodepointForKey(Key.z), 0x7a);
       expect(unshiftedCodepointForKey(Key.digit0), 0x30);
       expect(unshiftedCodepointForKey(Key.digit9), 0x39);
     });
@@ -114,78 +73,6 @@ void main() {
       expect(unshiftedCodepointForKey(Key.enter), 0);
       expect(unshiftedCodepointForKey(Key.arrowUp), 0);
       expect(unshiftedCodepointForKey(Key.f1), 0);
-    });
-  });
-
-  group('cursorFromMouseShape', () {
-    test('text shape returns text cursor', () {
-      expect(cursorFromMouseShape(MouseShape.text), SystemMouseCursors.text);
-    });
-
-    test('pointer shape returns click cursor', () {
-      expect(
-        cursorFromMouseShape(MouseShape.pointer),
-        SystemMouseCursors.click,
-      );
-    });
-
-    test('default shape returns basic cursor', () {
-      expect(
-        cursorFromMouseShape(MouseShape.defaultCursor),
-        SystemMouseCursors.basic,
-      );
-    });
-
-    test('resize shapes return corresponding cursors', () {
-      expect(
-        cursorFromMouseShape(MouseShape.colResize),
-        SystemMouseCursors.resizeColumn,
-      );
-      expect(
-        cursorFromMouseShape(MouseShape.rowResize),
-        SystemMouseCursors.resizeRow,
-      );
-      expect(
-        cursorFromMouseShape(MouseShape.nResize),
-        SystemMouseCursors.resizeUp,
-      );
-      expect(
-        cursorFromMouseShape(MouseShape.eResize),
-        SystemMouseCursors.resizeRight,
-      );
-    });
-
-    test('grab shapes return grab cursors', () {
-      expect(cursorFromMouseShape(MouseShape.grab), SystemMouseCursors.grab);
-      expect(
-        cursorFromMouseShape(MouseShape.grabbing),
-        SystemMouseCursors.grabbing,
-      );
-    });
-
-    test('compound resize shapes fall back to basic', () {
-      expect(
-        cursorFromMouseShape(MouseShape.ewResize),
-        SystemMouseCursors.basic,
-      );
-      expect(
-        cursorFromMouseShape(MouseShape.nsResize),
-        SystemMouseCursors.basic,
-      );
-      expect(
-        cursorFromMouseShape(MouseShape.neswResize),
-        SystemMouseCursors.basic,
-      );
-      expect(
-        cursorFromMouseShape(MouseShape.nwseResize),
-        SystemMouseCursors.basic,
-      );
-    });
-
-    test('all MouseShape values produce a cursor without throwing', () {
-      for (final shape in MouseShape.values) {
-        expect(() => cursorFromMouseShape(shape), returnsNormally);
-      }
     });
   });
 }

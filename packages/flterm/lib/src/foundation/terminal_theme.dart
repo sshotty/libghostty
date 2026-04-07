@@ -5,32 +5,37 @@ import 'package:libghostty/libghostty.dart';
 
 import 'color_palette.dart';
 
+/// Default dark ANSI palette (Tomorrow Night), matching Ghostty's defaults.
+const _darkAnsiColors = [
+  Color(0xFF1D1F21), // 0: black
+  Color(0xFFCC6666), // 1: red
+  Color(0xFFB5BD68), // 2: green
+  Color(0xFFF0C674), // 3: yellow
+  Color(0xFF81A2BE), // 4: blue
+  Color(0xFFB294BB), // 5: magenta
+  Color(0xFF8ABEB7), // 6: cyan
+  Color(0xFFC5C8C6), // 7: white
+  Color(0xFF666666), // 8: bright black
+  Color(0xFFD54E53), // 9: bright red
+  Color(0xFFB9CA4A), // 10: bright green
+  Color(0xFFE7C547), // 11: bright yellow
+  Color(0xFF7AA6DA), // 12: bright blue
+  Color(0xFFC397D8), // 13: bright magenta
+  Color(0xFF70C0B1), // 14: bright cyan
+  Color(0xFFEAEAEA), // 15: bright white
+];
+
 const _defaultFontFamilyFallback = [
+  'Apple Color Emoji',
+  'Noto Color Emoji',
+  'Noto Emoji',
+  'Segoe UI Emoji',
   'JetBrains Mono',
   'Menlo',
   'Consolas',
   'Ubuntu Mono',
   'DejaVu Sans Mono',
   'Courier New',
-];
-
-const _darkAnsiColors = [
-  Color(0xFF282828), // 0: black
-  Color(0xFFCC4242), // 1: red
-  Color(0xFF66994C), // 2: green
-  Color(0xFFE5B566), // 3: yellow
-  Color(0xFF668ECC), // 4: blue
-  Color(0xFFB266B2), // 5: magenta
-  Color(0xFF4CB2B2), // 6: cyan
-  Color(0xFFAAAAAA), // 7: white
-  Color(0xFF505050), // 8: bright black
-  Color(0xFFE66464), // 9: bright red
-  Color(0xFF8CBE6E), // 10: bright green
-  Color(0xFFF0C878), // 11: bright yellow
-  Color(0xFF82A0DC), // 12: bright blue
-  Color(0xFFC882C8), // 13: bright magenta
-  Color(0xFF64C8C8), // 14: bright cyan
-  Color(0xFFDCDCDC), // 15: bright white
 ];
 
 const _lightAnsiColors = [
@@ -68,26 +73,31 @@ final class CursorTheme {
   /// Time between blink state toggles.
   final Duration blinkInterval;
 
+  /// Cursor opacity from 0.0 (invisible) to 1.0 (fully opaque).
+  final double opacity;
+
   const CursorTheme({
     this.shape = CursorShape.block,
     this.color,
     this.blinkInterval = const Duration(milliseconds: 600),
+    this.opacity = 1.0,
   });
 
   @override
-  int get hashCode => Object.hash(shape, color, blinkInterval);
+  int get hashCode => Object.hash(shape, color, blinkInterval, opacity);
 
   @override
   bool operator ==(Object other) =>
       other is CursorTheme &&
       other.shape == shape &&
       other.color == color &&
-      other.blinkInterval == blinkInterval;
+      other.blinkInterval == blinkInterval &&
+      other.opacity == opacity;
 
   @override
   String toString() =>
       'CursorTheme(shape: $shape, color: $color, '
-      'blinkInterval: $blinkInterval)';
+      'blinkInterval: $blinkInterval, opacity: $opacity)';
 
   /// Linearly interpolates between two cursor themes.
   ///
@@ -105,6 +115,7 @@ final class CursorTheme {
           t,
         )!.round(),
       ),
+      opacity: lerpDouble(a.opacity, b.opacity, t)!,
     );
   }
 }
@@ -176,8 +187,8 @@ final class HyperlinkTheme {
   final HyperlinkStyle highlighted;
 
   const HyperlinkTheme({
-    this.idle = const HyperlinkStyle(),
-    this.highlighted = const HyperlinkStyle(underline: .single),
+    this.idle = const HyperlinkStyle(underline: .single),
+    this.highlighted = const HyperlinkStyle(underline: .double),
   });
 
   @override
@@ -202,7 +213,58 @@ final class HyperlinkTheme {
   }
 }
 
-/// Visual configuration for a terminal: colors, cursor, font, and palette.
+/// Selection highlight colors.
+///
+/// When null, selection background defaults to the terminal foreground color
+/// and selection foreground defaults to the terminal background color.
+@immutable
+final class SelectionTheme {
+  /// Selection background color. When null, uses the terminal foreground.
+  final Color? background;
+
+  /// Selection text color. When null, uses the terminal background.
+  final Color? foreground;
+
+  const SelectionTheme({this.background, this.foreground});
+
+  @override
+  int get hashCode => Object.hash(background, foreground);
+
+  @override
+  bool operator ==(Object other) =>
+      other is SelectionTheme &&
+      other.background == background &&
+      other.foreground == foreground;
+
+  @override
+  String toString() =>
+      'SelectionTheme(background: $background, foreground: $foreground)';
+
+  static SelectionTheme? lerp(SelectionTheme? a, SelectionTheme? b, double t) {
+    if (identical(a, b)) return a;
+    if (a == null || b == null) return t < 0.5 ? a : b;
+    return SelectionTheme(
+      background: Color.lerp(a.background, b.background, t),
+      foreground: Color.lerp(a.foreground, b.foreground, t),
+    );
+  }
+}
+
+/// Visual configuration for a terminal.
+///
+/// **Terminal-configuring properties** (pushed to the terminal on creation
+/// and theme change via the renderer):
+/// - [foreground], [background]: default text and canvas colors
+/// - [ansiColors] / [palette]: 256-color palette
+/// - [cursor].color: cursor color
+///
+/// **Rendering-only properties** (used by Flutter painters directly):
+/// - [fontSize], [fontFamily], [fontFamilyFallback]: text layout
+/// - [selection]: selection highlight colors
+/// - [hyperlink]: idle and highlighted hyperlink styling
+/// - [cursor].shape: initial cursor shape (terminal programs may override)
+/// - [cursor].blinkInterval, [cursor].opacity: cursor animation
+/// - [boldIsBright], [faintOpacity], [minimumContrast]: text rendering
 ///
 /// ```dart
 /// final theme = TerminalTheme.dark();
@@ -230,18 +292,31 @@ final class TerminalTheme {
 
   /// Fallback font families tried when a glyph is missing from [fontFamily].
   ///
-  /// Defaults to a cross-platform monospace chain (JetBrains Mono, Menlo,
-  /// Consolas, Ubuntu Mono, DejaVu Sans Mono, Courier New).
+  /// Defaults to platform emoji fonts (Apple Color Emoji, Segoe UI Emoji,
+  /// Noto Color Emoji) followed by a cross-platform monospace chain.
   final List<String> fontFamilyFallback;
 
   /// Font size in logical pixels.
   final double fontSize;
 
-  /// Selection highlight color.
-  final Color selectionColor;
+  /// Base font weight for regular (non-bold) terminal text.
+  final FontWeight fontWeight;
+
+  /// Selection highlight colors.
+  final SelectionTheme selection;
+
+  /// When true, bold text uses bright palette colors (indices 8-15).
+  final bool boldIsBright;
+
+  /// Opacity multiplier for faint (dim) text, from 0.0 to 1.0.
+  final double faintOpacity;
+
+  /// Minimum contrast ratio between foreground and background colors.
+  /// A value of 1.0 disables contrast enforcement.
+  final double minimumContrast;
 
   /// [ansiColors] must contain exactly 16 entries. The full 256-color palette
-  /// is auto-generated via CIELAB-based interpolation.
+  /// uses the standard xterm 6×6×6 cube and grayscale ramp for indices 16–255.
   TerminalTheme({
     required this.foreground,
     required this.background,
@@ -249,24 +324,25 @@ final class TerminalTheme {
     this.cursor = const CursorTheme(),
     this.hyperlink = const HyperlinkTheme(),
     this.fontSize = 14.0,
+    this.fontWeight = FontWeight.normal,
     this.fontFamily = 'JetBrains Mono',
     this.fontFamilyFallback = _defaultFontFamilyFallback,
-    this.selectionColor = const Color(0x3D7AA2F7),
+    this.selection = const SelectionTheme(background: Color(0x3D7AA2F7)),
+    this.boldIsBright = true,
+    this.faintOpacity = 0.5,
+    this.minimumContrast = 1.0,
   }) : assert(fontSize > 0, 'fontSize must be positive'),
-       palette = .fromAnsiColors(
-         ansiColors: ansiColors,
-         background: background,
-         foreground: foreground,
-       );
+       palette = .fromAnsiColors(ansiColors);
 
-  /// A dark-background terminal theme.
+  /// A dark-background terminal theme using the Tomorrow Night color scheme,
+  /// matching Ghostty's defaults.
   factory TerminalTheme.dark() => TerminalTheme(
-    foreground: const Color(0xFFD8D8D8),
-    background: const Color(0xFF181818),
+    foreground: const Color(0xFFC5C8C6),
+    background: const Color(0xFF1D1F21),
     ansiColors: _darkAnsiColors,
   );
 
-  /// A light-background terminal theme.
+  /// A light-background terminal theme using the Atom One Light color scheme.
   factory TerminalTheme.light() => TerminalTheme(
     foreground: const Color(0xFF383A42),
     background: const Color(0xFFFAFAFA),
@@ -279,10 +355,14 @@ final class TerminalTheme {
     required this.palette,
     required this.cursor,
     required this.fontSize,
+    required this.fontWeight,
     required this.hyperlink,
     required this.fontFamily,
     required this.fontFamilyFallback,
-    required this.selectionColor,
+    required this.selection,
+    required this.boldIsBright,
+    required this.faintOpacity,
+    required this.minimumContrast,
   });
 
   @override
@@ -293,9 +373,13 @@ final class TerminalTheme {
     cursor,
     hyperlink,
     fontSize,
+    fontWeight,
     fontFamily,
     Object.hashAll(fontFamilyFallback),
-    selectionColor,
+    selection,
+    boldIsBright,
+    faintOpacity,
+    minimumContrast,
   );
 
   @override
@@ -307,9 +391,13 @@ final class TerminalTheme {
       other.cursor == cursor &&
       other.hyperlink == hyperlink &&
       other.fontSize == fontSize &&
+      other.fontWeight == fontWeight &&
       other.fontFamily == fontFamily &&
       listEquals(other.fontFamilyFallback, fontFamilyFallback) &&
-      other.selectionColor == selectionColor;
+      other.selection == selection &&
+      other.boldIsBright == boldIsBright &&
+      other.faintOpacity == faintOpacity &&
+      other.minimumContrast == minimumContrast;
 
   /// Returns a copy of this theme with the given fields replaced.
   TerminalTheme copyWith({
@@ -319,28 +407,32 @@ final class TerminalTheme {
     CursorTheme? cursor,
     HyperlinkTheme? hyperlink,
     double? fontSize,
+    FontWeight? fontWeight,
     String? fontFamily,
     List<String>? fontFamilyFallback,
-    Color? selectionColor,
+    SelectionTheme? selection,
+    bool? boldIsBright,
+    double? faintOpacity,
+    double? minimumContrast,
   }) {
     final newForeground = foreground ?? this.foreground;
     final newBackground = background ?? this.background;
-    final regenerate =
-        ansiColors != null ||
-        newForeground != this.foreground ||
-        newBackground != this.background;
 
-    if (regenerate) {
+    if (ansiColors != null) {
       return TerminalTheme(
         foreground: newForeground,
         background: newBackground,
         cursor: cursor ?? this.cursor,
         hyperlink: hyperlink ?? this.hyperlink,
         fontSize: fontSize ?? this.fontSize,
+        fontWeight: fontWeight ?? this.fontWeight,
         fontFamily: fontFamily ?? this.fontFamily,
         fontFamilyFallback: fontFamilyFallback ?? this.fontFamilyFallback,
-        selectionColor: selectionColor ?? this.selectionColor,
-        ansiColors: ansiColors ?? List<Color>.generate(16, (i) => palette[i]),
+        selection: selection ?? this.selection,
+        boldIsBright: boldIsBright ?? this.boldIsBright,
+        faintOpacity: faintOpacity ?? this.faintOpacity,
+        minimumContrast: minimumContrast ?? this.minimumContrast,
+        ansiColors: ansiColors,
       );
     }
 
@@ -351,20 +443,30 @@ final class TerminalTheme {
       cursor: cursor ?? this.cursor,
       hyperlink: hyperlink ?? this.hyperlink,
       fontSize: fontSize ?? this.fontSize,
+      fontWeight: fontWeight ?? this.fontWeight,
       fontFamily: fontFamily ?? this.fontFamily,
       fontFamilyFallback: fontFamilyFallback ?? this.fontFamilyFallback,
-      selectionColor: selectionColor ?? this.selectionColor,
+      selection: selection ?? this.selection,
+      boldIsBright: boldIsBright ?? this.boldIsBright,
+      faintOpacity: faintOpacity ?? this.faintOpacity,
+      minimumContrast: minimumContrast ?? this.minimumContrast,
     );
   }
 
-  /// Resolves a [CellColor] from the core package to a Flutter [Color].
+  /// Resolves a [CellColor] to a Flutter [Color] using this theme's palette.
   ///
-  /// When [isForeground] is true, [DefaultColor] resolves to [foreground];
-  /// otherwise it resolves to [background].
+  /// For [DefaultColor], returns [foreground] or [background] based on
+  /// [isForeground]. For [PaletteColor], looks up the index in [palette].
+  /// For [RgbColor], converts directly.
+  ///
+  /// The theme palette matches the terminal palette at theme-change time.
+  /// OSC 4 individual entry overrides are not reflected until the next
+  /// theme update.
   Color resolveColor(CellColor color, {required bool isForeground}) {
     return switch (color) {
       DefaultColor() => isForeground ? foreground : background,
       RgbColor(:final r, :final g, :final b) => Color.fromARGB(255, r, g, b),
+      PaletteColor(:final index) => palette[index],
     };
   }
 
@@ -386,9 +488,13 @@ final class TerminalTheme {
       cursor: CursorTheme.lerp(a.cursor, b.cursor, t)!,
       hyperlink: HyperlinkTheme.lerp(a.hyperlink, b.hyperlink, t)!,
       fontSize: lerpDouble(a.fontSize, b.fontSize, t)!,
+      fontWeight: FontWeight.lerp(a.fontWeight, b.fontWeight, t)!,
       fontFamily: t < 0.5 ? a.fontFamily : b.fontFamily,
       fontFamilyFallback: t < 0.5 ? a.fontFamilyFallback : b.fontFamilyFallback,
-      selectionColor: Color.lerp(a.selectionColor, b.selectionColor, t)!,
+      selection: SelectionTheme.lerp(a.selection, b.selection, t)!,
+      boldIsBright: t < 0.5 ? a.boldIsBright : b.boldIsBright,
+      faintOpacity: lerpDouble(a.faintOpacity, b.faintOpacity, t)!,
+      minimumContrast: lerpDouble(a.minimumContrast, b.minimumContrast, t)!,
     );
   }
 }
