@@ -1,24 +1,26 @@
 import 'package:flutter/services.dart';
+import 'package:meta/meta.dart';
 
 /// Soft keyboard text input connection for the terminal.
 ///
 /// Processes IME deltas and surfaces semantic events (text commits,
 /// deletions, newlines).
+@internal
 class TerminalInputClient with DeltaTextInputClient {
   static final _newlinePattern = RegExp(r'[\n\r]');
   static const _sentinel = TextEditingValue(
+    selection: .collapsed(offset: 1),
     text: ' ',
-    selection: TextSelection.collapsed(offset: 1),
   );
 
   TextInputConnection? _connection;
   TextEditingValue _value = _sentinel;
+  Brightness _keyboardAppearance = .dark;
   var _wasComposing = false;
 
-  ValueChanged<String>? onTextCommitted;
-  ValueChanged<int>? onDelete;
   VoidCallback? onNewline;
-
+  ValueChanged<int>? onDelete;
+  ValueChanged<String>? onTextCommitted;
   ValueChanged<String>? onComposingChanged;
 
   @override
@@ -28,6 +30,8 @@ class TerminalInputClient with DeltaTextInputClient {
   TextEditingValue get currentTextEditingValue => _value;
 
   bool get isAttached => _connection != null;
+
+  set keyboardAppearance(Brightness value) => _keyboardAppearance = value;
 
   void attach({Brightness keyboardAppearance = Brightness.dark}) {
     _connection?.close();
@@ -61,7 +65,7 @@ class TerminalInputClient with DeltaTextInputClient {
     TextInputControl? newControl,
   ) {}
 
-  void hide() => SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+  void hide() => _connection?.close();
 
   @override
   void insertContent(KeyboardInsertedContent content) {}
@@ -71,7 +75,7 @@ class TerminalInputClient with DeltaTextInputClient {
 
   @override
   void performAction(TextInputAction action) {
-    if (action == TextInputAction.newline) onNewline?.call();
+    if (action == .newline) onNewline?.call();
   }
 
   @override
@@ -83,7 +87,10 @@ class TerminalInputClient with DeltaTextInputClient {
   @override
   void removeTextPlaceholder() {}
 
-  void show() => _connection?.show();
+  void show() {
+    attach(keyboardAppearance: _keyboardAppearance);
+    _connection?.show();
+  }
 
   @override
   void showAutocorrectionPromptRect(int start, int end) {}

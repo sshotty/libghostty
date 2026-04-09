@@ -5,8 +5,8 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flterm/src/foundation.dart';
-import 'package:flterm/src/widgets.dart';
-import 'package:flutter/widgets.dart' hide Key;
+import 'package:flterm/src/widgets/terminal_controller_impl.dart';
+import 'package:flterm/src/widgets/terminal_view_binding.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:libghostty/libghostty.dart' hide KeyEvent;
 
@@ -14,10 +14,11 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('TerminalController', () {
-    late TerminalController controller;
+    late TerminalControllerImpl controller;
 
     setUp(() {
-      controller = TerminalController();
+      controller = TerminalControllerImpl();
+      controller.terminal.renderState.update();
     });
 
     tearDown(() => controller.dispose());
@@ -32,34 +33,9 @@ void main() {
       expect(controller.hasFocus, isFalse);
     });
 
-    test('showKeyboard and hideKeyboard do not throw', () {
-      expect(() => controller.showKeyboard(), returnsNormally);
-      expect(() => controller.hideKeyboard(), returnsNormally);
-    });
-  });
-
-  group('TerminalViewBinding', () {
-    late TerminalController controller;
-    late TerminalViewBinding binding;
-    late Terminal terminal;
-    late FocusNode focusNode;
-
-    setUp(() {
-      controller = TerminalController();
-      binding = controller as TerminalViewBinding;
-      terminal = Terminal(cols: 80, rows: 24);
-      focusNode = FocusNode();
-    });
-
-    tearDown(() {
-      controller.dispose();
-      terminal.dispose();
-      focusNode.dispose();
-    });
-
     test('sendText emits bytes via onOutput', () {
       final output = <Uint8List>[];
-      binding.onOutput = output.add;
+      controller.onOutput = output.add;
 
       controller.sendText('hello');
 
@@ -69,7 +45,7 @@ void main() {
 
     test('sendText with empty string does not emit', () {
       final output = <Uint8List>[];
-      binding.onOutput = output.add;
+      controller.onOutput = output.add;
 
       controller.sendText('');
 
@@ -78,23 +54,23 @@ void main() {
 
     test('sendKey encodes and emits output', () {
       final output = <Uint8List>[];
-      binding.onOutput = output.add;
+      controller.onOutput = output.add;
 
-      controller.sendKey(Key.keyA);
+      controller.sendKey(Key.a);
 
       expect(output, hasLength(1));
       expect(utf8.decode(output.first), 'a');
     });
 
     test('sendKey does not emit when onOutput is null', () {
-      controller.sendKey(Key.keyA);
+      controller.sendKey(Key.a);
     });
 
     test('selection setter notifies listeners', () {
       var notified = false;
       controller.addListener(() => notified = true);
 
-      binding.selection = const TerminalSelection(
+      controller.selection = const TerminalSelection(
         startRow: 0,
         startCol: 0,
         endRow: 0,
@@ -112,12 +88,12 @@ void main() {
         endRow: 0,
         endCol: 5,
       );
-      binding.selection = sel;
+      controller.selection = sel;
 
       var notified = false;
       controller.addListener(() => notified = true);
 
-      binding.selection = sel;
+      controller.selection = sel;
 
       expect(notified, isFalse);
     });
@@ -129,7 +105,7 @@ void main() {
       controller.clearSelection();
       expect(notifyCount, 0);
 
-      binding.selection = const TerminalSelection(
+      controller.selection = const TerminalSelection(
         startRow: 0,
         startCol: 0,
         endRow: 0,
@@ -143,8 +119,7 @@ void main() {
     });
 
     test('selectAll selects up to last row and col with content', () {
-      terminal.write(Uint8List.fromList(utf8.encode('hello\r\nworld')));
-      binding.terminal = terminal;
+      controller.writeUtf8('hello\r\nworld');
 
       controller.selectAll();
 
@@ -156,21 +131,13 @@ void main() {
     });
 
     test('selectAll does nothing on empty screen', () {
-      binding.terminal = terminal;
-
       controller.selectAll();
 
-      expect(controller.selection, isNull);
-    });
-
-    test('selectAll does nothing when screen is null', () {
-      controller.selectAll();
       expect(controller.selection, isNull);
     });
 
     test('selectAll with single row selects that row only', () {
-      terminal.write(Uint8List.fromList(utf8.encode('abc')));
-      binding.terminal = terminal;
+      controller.writeUtf8('abc');
 
       controller.selectAll();
 
@@ -182,11 +149,13 @@ void main() {
     });
 
     test('selectedText returns text from screen', () {
-      terminal = Terminal(cols: 20, rows: 5);
-      terminal.write(Uint8List.fromList(utf8.encode('hello world')));
-      binding.terminal = terminal;
+      controller = TerminalControllerImpl(
+        config: const TerminalConfig(cols: 20, rows: 5),
+      );
+      controller.terminal.renderState.update();
+      controller.writeUtf8('hello world');
 
-      binding.selection = const TerminalSelection(
+      controller.selection = const TerminalSelection(
         startRow: 0,
         startCol: 0,
         endRow: 0,
@@ -197,17 +166,19 @@ void main() {
     });
 
     test('selectedText excludes spacer tails from wide characters', () {
-      terminal = Terminal(cols: 20, rows: 5);
-      terminal.write(
+      controller = TerminalControllerImpl(
+        config: const TerminalConfig(cols: 20, rows: 5),
+      );
+      controller.terminal.renderState.update();
+      controller.write(
         Uint8List.fromList([
           0xE6, 0x97, 0xA5, // 日
           0xE6, 0x9C, 0xAC, // 本
           0xE8, 0xAA, 0x9E, // 語
         ]),
       );
-      binding.terminal = terminal;
 
-      binding.selection = const TerminalSelection(
+      controller.selection = const TerminalSelection(
         startRow: 0,
         startCol: 0,
         endRow: 0,
@@ -215,8 +186,7 @@ void main() {
       );
       expect(controller.selectedText, '日本語');
 
-      // Block mode also excludes spacer tails
-      binding.selection = const TerminalSelection(
+      controller.selection = const TerminalSelection(
         startRow: 0,
         startCol: 0,
         endRow: 0,
@@ -226,41 +196,30 @@ void main() {
       expect(controller.selectedText, '日本語');
     });
 
-    test('selectedText returns empty when screen is null', () {
-      binding.selection = const TerminalSelection(
-        startRow: 0,
-        startCol: 0,
-        endRow: 0,
-        endCol: 5,
-      );
-
-      expect(controller.selectedText, '');
-    });
-
     group('scrollback selection', () {
-      late Terminal smallTerminal;
+      late TerminalControllerImpl smallController;
 
       setUp(() {
-        smallTerminal = Terminal(cols: 20, rows: 3);
-        binding.terminal = smallTerminal;
+        smallController = TerminalControllerImpl(
+          config: const TerminalConfig(cols: 20, rows: 3),
+        );
+        smallController.terminal.renderState.update();
       });
 
-      tearDown(() => smallTerminal.dispose());
+      tearDown(() => smallController.dispose());
 
       void writeLines(List<String> lines) {
-        smallTerminal.write(
-          Uint8List.fromList(utf8.encode(lines.join('\r\n'))),
-        );
+        smallController.writeUtf8(lines.join('\r\n'));
       }
 
       test('selectAll includes scrollback rows', () {
         writeLines(['aaa', 'bbb', 'ccc', 'ddd', 'eee']);
-        final scrollbackLen = smallTerminal.scrollback.length;
+        final scrollbackLen = smallController.scrollbackRows;
         expect(scrollbackLen, 2);
 
-        controller.selectAll();
+        smallController.selectAll();
 
-        final sel = controller.selection!;
+        final sel = smallController.selection!;
         expect(sel.startRow, 0);
         expect(sel.startCol, 0);
         expect(sel.endRow, scrollbackLen + 2);
@@ -269,36 +228,36 @@ void main() {
 
       test('selectAll with only scrollback content', () {
         writeLines(['aaa', 'bbb', 'ccc', '']);
-        final scrollbackLen = smallTerminal.scrollback.length;
+        final scrollbackLen = smallController.scrollbackRows;
         expect(scrollbackLen, greaterThan(0));
 
-        controller.selectAll();
+        smallController.selectAll();
 
-        final sel = controller.selection!;
+        final sel = smallController.selection!;
         expect(sel.startRow, 0);
       });
 
       test('selectedText handles selection beyond screen bounds', () {
         writeLines(['aaa', 'bbb', 'ccc']);
-        binding.selection = const TerminalSelection(
+        smallController.selection = const TerminalSelection(
           startRow: 0,
           startCol: 0,
           endRow: 99,
           endCol: 20,
         );
 
-        expect(() => controller.selectedText, returnsNormally);
-        expect(controller.selectedText, contains('aaa'));
+        expect(() => smallController.selectedText, returnsNormally);
+        expect(smallController.selectedText, contains('aaa'));
       });
 
       test('selectedText extracts from scrollback and screen', () {
         writeLines(['aaa', 'bbb', 'ccc', 'ddd', 'eee']);
-        final scrollbackLen = smallTerminal.scrollback.length;
+        final scrollbackLen = smallController.scrollbackRows;
         expect(scrollbackLen, 2);
 
-        controller.selectAll();
+        smallController.selectAll();
 
-        final text = controller.selectedText;
+        final text = smallController.selectedText;
         expect(text, contains('aaa'));
         expect(text, contains('bbb'));
         expect(text, contains('ccc'));
@@ -307,23 +266,27 @@ void main() {
       });
 
       test('selectedText joins wrapped lines without newline', () {
-        final wrapTerminal = Terminal(cols: 5, rows: 3);
-        addTearDown(wrapTerminal.dispose);
-        wrapTerminal.write(Uint8List.fromList(utf8.encode('abcdefgh')));
-        binding.terminal = wrapTerminal;
+        final wrapController = TerminalControllerImpl(
+          config: const TerminalConfig(cols: 5, rows: 3),
+        );
+        addTearDown(wrapController.dispose);
+        wrapController.terminal.renderState.update();
+        wrapController.writeUtf8('abcdefgh');
 
-        controller.selectAll();
+        wrapController.selectAll();
 
-        final text = controller.selectedText;
+        final text = wrapController.selectedText;
         expect(text, 'abcdefgh');
         expect(text, isNot(contains('\n')));
       });
 
       test('selectedText with wrapped wide characters', () {
-        // "A日B日C" on cols=5: row 0 "A日B" (5 cols), row 1 "日C" (3 cols)
-        final wt = Terminal(cols: 5, rows: 3);
-        addTearDown(wt.dispose);
-        wt.write(
+        final wrapController = TerminalControllerImpl(
+          config: const TerminalConfig(cols: 5, rows: 3),
+        );
+        addTearDown(wrapController.dispose);
+        wrapController.terminal.renderState.update();
+        wrapController.write(
           Uint8List.fromList([
             ...utf8.encode('A'),
             0xE6, 0x97, 0xA5, // 日
@@ -332,15 +295,14 @@ void main() {
             ...utf8.encode('C'),
           ]),
         );
-        binding.terminal = wt;
-        controller.selectAll();
+        wrapController.selectAll();
 
-        expect(controller.selectedText, 'A日B日C');
+        expect(wrapController.selectedText, 'A日B日C');
       });
 
       test('selectedText in block mode inserts newlines between rows', () {
         writeLines(['aaaa', 'bbbb', 'cccc']);
-        binding.selection = const TerminalSelection(
+        smallController.selection = const TerminalSelection(
           startRow: 0,
           startCol: 1,
           endRow: 2,
@@ -348,7 +310,7 @@ void main() {
           mode: TerminalSelectionMode.block,
         );
 
-        final text = controller.selectedText;
+        final text = smallController.selectedText;
         final lines = text.split('\n');
         expect(lines.length, 3);
         expect(lines[0], 'aa');
@@ -358,16 +320,16 @@ void main() {
 
       test('selectedText with partial scrollback selection', () {
         writeLines(['aaa', 'bbb', 'ccc', 'ddd']);
-        expect(smallTerminal.scrollback.length, 1);
+        expect(smallController.scrollbackRows, 1);
 
-        binding.selection = const TerminalSelection(
+        smallController.selection = const TerminalSelection(
           startRow: 0,
           startCol: 0,
           endRow: 1,
           endCol: 3,
         );
 
-        final text = controller.selectedText;
+        final text = smallController.selectedText;
         expect(text, contains('aaa'));
         expect(text, contains('bbb'));
         expect(text, isNot(contains('ccc')));
@@ -375,10 +337,9 @@ void main() {
     });
 
     group('clear', () {
-      test('emits erase scrollback and form feed', () {
+      test('emits form feed', () {
         final output = <Uint8List>[];
-        binding.onOutput = output.add;
-        binding.terminal = terminal;
+        controller.onOutput = output.add;
 
         controller.clear();
 
@@ -388,19 +349,17 @@ void main() {
       });
 
       test('writes erase scrollback to terminal', () {
-        binding.terminal = terminal;
-        terminal.write(Uint8List.fromList(utf8.encode('hello\r\nworld\r\n')));
+        controller.writeUtf8('hello\r\nworld\r\n');
 
         controller.clear();
 
-        expect(terminal.scrollback.length, 0);
+        expect(controller.scrollbackRows, 0);
       });
 
       test('does nothing on alternate screen', () {
         final output = <Uint8List>[];
-        binding.onOutput = output.add;
-        binding.terminal = terminal;
-        terminal.write(Uint8List.fromList(utf8.encode('\x1b[?1049h')));
+        controller.onOutput = output.add;
+        controller.writeUtf8('\x1b[?1049h');
 
         controller.clear();
 
@@ -408,8 +367,7 @@ void main() {
       });
 
       test('clears selection', () {
-        binding.terminal = terminal;
-        binding.selection = const TerminalSelection(
+        controller.selection = const TerminalSelection(
           startRow: 0,
           startCol: 0,
           endRow: 1,
@@ -422,51 +380,180 @@ void main() {
       });
     });
 
-    test('syncModes returns null when modes unchanged', () {
-      const modes = TerminalModes();
-      binding.syncModes(modes);
+    group('paste', () {
+      test('sends text via onOutput', () {
+        final output = <Uint8List>[];
+        controller.onOutput = output.add;
 
-      expect(binding.syncModes(modes), isNull);
+        controller.paste('hello');
+
+        expect(output, hasLength(1));
+        expect(utf8.decode(output.first), 'hello');
+      });
+
+      test('wraps with bracketed paste escape when mode is active', () {
+        controller.terminal.modeSet(
+          const TerminalMode.bracketedPaste(),
+          value: true,
+        );
+        final output = <Uint8List>[];
+        controller.onOutput = output.add;
+
+        controller.paste('hello');
+
+        expect(output, hasLength(1));
+        final decoded = utf8.decode(output.first);
+        expect(decoded, contains('\x1b[200~'));
+        expect(decoded, contains('hello'));
+        expect(decoded, contains('\x1b[201~'));
+      });
+
+      test('empty text does not emit', () {
+        final output = <Uint8List>[];
+        controller.onOutput = output.add;
+
+        controller.paste('');
+
+        expect(output, isEmpty);
+      });
     });
 
-    test('syncModes returns new tracking mode when changed', () {
-      const modes = TerminalModes(mouseTracking: MouseTracking.normal);
-      final result = binding.syncModes(modes);
+    group('config', () {
+      test('getter returns initial config', () {
+        final custom = TerminalControllerImpl(
+          config: const TerminalConfig(cols: 120, rows: 40),
+        );
+        addTearDown(custom.dispose);
 
-      expect(result, MouseTracking.normal);
+        expect(custom.config.cols, 120);
+        expect(custom.config.rows, 40);
+      });
+
+      test('setter updates config', () {
+        controller.config = const TerminalConfig(cols: 120, rows: 40);
+        expect(controller.config.cols, 120);
+      });
     });
 
-    test('syncModes returns null when only non-mouse modes change', () {
-      const modes = TerminalModes(cursorKeyApplication: true);
-      final result = binding.syncModes(modes);
+    group('modeGet and modeSet', () {
+      test('modeSet enables and modeGet reads back', () {
+        controller.modeSet(const TerminalMode.autoWrap(), value: false);
+        expect(controller.modeGet(const TerminalMode.autoWrap()), isFalse);
 
-      expect(result, isNull);
+        controller.modeSet(const TerminalMode.autoWrap(), value: true);
+        expect(controller.modeGet(const TerminalMode.autoWrap()), isTrue);
+      });
+    });
+
+    group('activeScreen', () {
+      test('defaults to primary', () {
+        expect(controller.activeScreen, TerminalScreen.primary);
+      });
+
+      test('switches to alternate via escape sequence', () {
+        controller.terminal.writeUtf8('\x1b[?1049h');
+        expect(controller.activeScreen, TerminalScreen.alternate);
+      });
+    });
+
+    group('title', () {
+      test('defaults to empty', () {
+        expect(controller.title, isEmpty);
+      });
+
+      test('updates via OSC 0 escape sequence', () {
+        controller.terminal.writeUtf8('\x1b]0;my title\x1b\\');
+        expect(controller.title, 'my title');
+      });
+
+      test('fires onTitleChanged callback', () {
+        var fired = false;
+        controller.onTitleChanged = () => fired = true;
+
+        controller.terminal.writeUtf8('\x1b]0;new title\x1b\\');
+
+        expect(fired, isTrue);
+      });
+    });
+
+    group('selectWord', () {
+      test('selects word at position', () {
+        controller = TerminalControllerImpl(
+          config: const TerminalConfig(cols: 20, rows: 5),
+        );
+        controller.terminal.renderState.update();
+        controller.terminal.writeUtf8('hello world');
+
+        (controller as TerminalViewBinding).selectWord(0, 1);
+
+        final sel = controller.selection!;
+        expect(sel.startCol, 0);
+        expect(sel.endCol, 5);
+      });
+    });
+
+    group('selectLine', () {
+      test('selects line content at row', () {
+        controller = TerminalControllerImpl(
+          config: const TerminalConfig(cols: 20, rows: 5),
+        );
+        controller.terminal.renderState.update();
+        controller.terminal.writeUtf8('hello world');
+
+        (controller as TerminalViewBinding).selectLine(0, .content);
+
+        final sel = controller.selection!;
+        expect(sel.startCol, 0);
+        expect(sel.endCol, 11);
+      });
+
+      test('selects full row width in full mode', () {
+        controller = TerminalControllerImpl(
+          config: const TerminalConfig(cols: 20, rows: 5),
+        );
+        controller.terminal.renderState.update();
+        controller.terminal.writeUtf8('hello');
+
+        (controller as TerminalViewBinding).selectLine(0, .full);
+
+        final sel = controller.selection!;
+        expect(sel.startCol, 0);
+        expect(sel.endCol, 20);
+      });
+    });
+
+    group('dispose', () {
+      test('can be called without error', () {
+        final disposable = TerminalControllerImpl();
+
+        disposable.dispose();
+      });
     });
 
     group('virtual mods', () {
       test('toggleMod activates, deactivates, and combines modifiers', () {
-        expect(controller.virtualMods, Mods.none);
+        expect(controller.virtualMods, const Mods.none());
 
-        controller.toggleMod(Mods.ctrl);
+        controller.toggleMod(const Mods.ctrl());
         expect(controller.virtualMods.hasCtrl, isTrue);
 
-        controller.toggleMod(Mods.alt);
+        controller.toggleMod(const Mods.alt());
         expect(controller.virtualMods.hasCtrl, isTrue);
         expect(controller.virtualMods.hasAlt, isTrue);
 
-        controller.toggleMod(Mods.ctrl);
+        controller.toggleMod(const Mods.ctrl());
         expect(controller.virtualMods.hasCtrl, isFalse);
         expect(controller.virtualMods.hasAlt, isTrue);
 
-        controller.toggleMod(Mods.alt);
-        expect(controller.virtualMods, Mods.none);
+        controller.toggleMod(const Mods.alt());
+        expect(controller.virtualMods, const Mods.none());
       });
 
       test('toggleMod notifies listeners', () {
         var notified = false;
         controller.addListener(() => notified = true);
 
-        controller.toggleMod(Mods.ctrl);
+        controller.toggleMod(const Mods.ctrl());
 
         expect(notified, isTrue);
       });
@@ -478,56 +565,56 @@ void main() {
         controller.clearVirtualMods();
         expect(notifyCount, 0);
 
-        controller.toggleMod(Mods.ctrl);
+        controller.toggleMod(const Mods.ctrl());
         notifyCount = 0;
 
         controller.clearVirtualMods();
         expect(notifyCount, 1);
-        expect(controller.virtualMods, Mods.none);
+        expect(controller.virtualMods, const Mods.none());
       });
 
       test('sendKey merges virtual mods', () {
         final output = <Uint8List>[];
-        binding.onOutput = output.add;
+        controller.onOutput = output.add;
 
-        controller.toggleMod(Mods.ctrl);
-        controller.sendKey(Key.keyC);
+        controller.toggleMod(const Mods.ctrl());
+        controller.sendKey(Key.c);
 
         expect(output, hasLength(1));
         expect(output.first, equals(utf8.encode('\x03')));
       });
 
       test('sendKey clears virtual mods after encoding', () {
-        binding.onOutput = (_) {};
+        controller.onOutput = (_) {};
 
-        controller.toggleMod(Mods.ctrl);
-        controller.sendKey(Key.keyA);
+        controller.toggleMod(const Mods.ctrl());
+        controller.sendKey(Key.a);
 
-        expect(controller.virtualMods, Mods.none);
+        expect(controller.virtualMods, const Mods.none());
       });
 
       test('sendKey merges explicit and virtual mods', () {
         final output = <Uint8List>[];
-        binding.onOutput = output.add;
+        controller.onOutput = output.add;
 
-        controller.toggleMod(Mods.ctrl);
-        controller.sendKey(Key.keyC, mods: Mods.shift);
+        controller.toggleMod(const Mods.ctrl());
+        controller.sendKey(Key.c, mods: const Mods.shift());
 
         expect(output, hasLength(1));
-        expect(controller.virtualMods, Mods.none);
+        expect(controller.virtualMods, const Mods.none());
       });
 
       test('sendText clears virtual mods', () {
-        binding.onOutput = (_) {};
+        controller.onOutput = (_) {};
 
-        controller.toggleMod(Mods.ctrl);
+        controller.toggleMod(const Mods.ctrl());
         controller.sendText('hello');
 
-        expect(controller.virtualMods, Mods.none);
+        expect(controller.virtualMods, const Mods.none());
       });
 
       test('sendText does not clear when text is empty', () {
-        controller.toggleMod(Mods.ctrl);
+        controller.toggleMod(const Mods.ctrl());
         controller.sendText('');
 
         expect(controller.virtualMods.hasCtrl, isTrue);
@@ -539,37 +626,45 @@ void main() {
 
       setUp(() {
         output = [];
-        binding.onOutput = output.add;
+        controller.onOutput = output.add;
       });
 
       test('single char commits with mod via sendKey', () {
-        controller.toggleMod(Mods.ctrl);
+        controller.toggleMod(const Mods.ctrl());
 
-        binding.testCommitText('c');
+        (controller as TerminalViewBinding).testCommitText('c');
 
         expect(output, hasLength(1));
         expect(output.first, equals(utf8.encode('\x03')));
-        expect(controller.virtualMods, Mods.none);
+        expect(controller.virtualMods, const Mods.none());
       });
 
       test('multi-char commits as plain text and clears mods', () {
-        controller.toggleMod(Mods.ctrl);
+        controller.toggleMod(const Mods.ctrl());
 
-        binding.testCommitText('hello');
+        (controller as TerminalViewBinding).testCommitText('hello');
 
         expect(output, hasLength(1));
         expect(utf8.decode(output.first), 'hello');
-        expect(controller.virtualMods, Mods.none);
+        expect(controller.virtualMods, const Mods.none());
       });
 
       test('unmappable single char commits as plain text and clears mods', () {
-        controller.toggleMod(Mods.ctrl);
+        controller.toggleMod(const Mods.ctrl());
 
-        binding.testCommitText('\u{1F600}');
+        (controller as TerminalViewBinding).testCommitText('\u{1F600}');
 
         expect(output, hasLength(1));
-        expect(controller.virtualMods, Mods.none);
+        expect(controller.virtualMods, const Mods.none());
       });
     });
   });
+}
+
+extension on Terminal {
+  void writeUtf8(String text) => write(Uint8List.fromList(utf8.encode(text)));
+}
+
+extension on TerminalControllerImpl {
+  void writeUtf8(String text) => write(Uint8List.fromList(utf8.encode(text)));
 }

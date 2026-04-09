@@ -5,22 +5,22 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  late TerminalInputClient handler;
-  late List<String> commits;
-  late List<int> deletes;
-  late List<void> newlines;
-
-  setUp(() {
-    handler = TerminalInputClient();
-    commits = [];
-    deletes = [];
-    newlines = [];
-    handler.onTextCommitted = commits.add;
-    handler.onDelete = deletes.add;
-    handler.onNewline = () => newlines.add(null);
-  });
-
   group('TerminalInputClient', () {
+    late TerminalInputClient handler;
+    late List<String> commits;
+    late List<int> deletes;
+    late List<void> newlines;
+
+    setUp(() {
+      handler = TerminalInputClient();
+      commits = [];
+      deletes = [];
+      newlines = [];
+      handler.onTextCommitted = commits.add;
+      handler.onDelete = deletes.add;
+      handler.onNewline = () => newlines.add(null);
+    });
+
     test('insertion commits text', () {
       handler.updateEditingValueWithDeltas([
         const TextEditingDeltaInsertion(
