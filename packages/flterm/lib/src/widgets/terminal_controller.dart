@@ -4,58 +4,117 @@ import 'package:libghostty/libghostty.dart';
 import '../foundation.dart';
 import 'terminal_controller_impl.dart';
 
-/// Controls a [TerminalView].
+/// Manages a terminal instance and bridges it with [TerminalView].
 ///
-/// A [TerminalController] lets you send input, manage text selection, toggle
-/// virtual modifier keys, and control keyboard visibility from code. It also
-/// implements [TerminalRenderState], so the terminal view repaints
-/// automatically when selection or focus changes.
+/// Create a controller, wire up [onOutput] to your backend, pass the
+/// controller to a [TerminalView], and feed backend data into [write].
+/// The controller handles input encoding, selection, focus, and all
+/// terminal state.
 ///
-/// A [TerminalController] should be created early (e.g. in [State.initState])
-/// and disposed when the widget is removed from the tree.
+/// Dispose when no longer needed.
 ///
 /// ```dart
-/// final controller = TerminalController();
+/// final controller = TerminalController()
+///   ..onOutput = (bytes) => pty.write(bytes)
+///   ..onBell = () => playSound()
+///   ..onTitleChanged = () => updateTitle(controller.title);
 ///
-/// // Attach to a TerminalView.
-/// TerminalView(
-///   terminal: terminal,
-///   controller: controller,
-///   onOutput: (bytes) => pty.write(bytes),
-/// );
+/// TerminalView(controller: controller);
 ///
-/// // Send input programmatically.
+/// pty.onData = (bytes) => controller.write(bytes);
 /// controller.sendText('ls -la\n');
-///
-/// // Read selected text.
-/// controller.selectAll();
-/// print(controller.selectedText);
 /// ```
 abstract class TerminalController extends ChangeNotifier
-    implements TerminalRenderState {
-  factory TerminalController() => TerminalControllerImpl();
+    implements TerminalRenderObserver {
+  /// Called with bytes to send to the backend (PTY, SSH, socket).
+  ///
+  /// Set this before calling [write]. Fires during [write], [sendKey],
+  /// [sendText], and [paste].
+  ValueChanged<Uint8List>? onOutput;
+
+  /// Called when the terminal receives a BEL character (0x07).
+  VoidCallback? onBell;
+
+  /// Called when the terminal title changes. Read [title] for the value.
+  VoidCallback? onTitleChanged;
+
+  /// Called when the grid dimensions change. Forward to your backend.
+  OnResize? onResize;
+
+  /// Creates a controller with the given [config].
+  ///
+  /// The terminal is created immediately with dimensions and scrollback
+  /// from [config]. Disposed when the controller is disposed.
+  factory TerminalController({TerminalConfig config}) = TerminalControllerImpl;
 
   @internal
   TerminalController.base();
 
-  /// Text content of the current selection. Empty string if no selection.
+  /// Active screen buffer (primary or alternate).
+  ///
+  /// Full-screen programs (vim, less, htop) use the alternate screen.
+  /// Scrollback is only available on the primary screen.
+  TerminalScreen get activeScreen;
+
+  /// Current terminal configuration.
+  TerminalConfig get config;
+
+  /// Replaces the configuration.
+  ///
+  /// Applies mode and encoder changes without recreating the terminal.
+  /// Screen content, scrollback, and cursor position are preserved.
+  set config(TerminalConfig config);
+
+  /// Current soft keyboard state.
+  KeyboardState get keyboardState;
+
+  /// Current mouse tracking mode requested by the terminal program.
+  ///
+  /// When active, mouse events are encoded and sent to the program
+  /// instead of performing selection. Hold Shift to bypass.
+  MouseTracking get mouseTracking;
+
+  /// Working directory reported by the shell (OSC 7). Empty if unset.
+  String get pwd;
+
+  /// Number of scrollback rows above the viewport.
+  int get scrollbackRows;
+
+  /// Scrollbar state: total rows, visible rows, and current offset.
+  Scrollbar get scrollbar;
+
+  /// Text content of the current selection, or empty if none.
+  ///
+  /// Soft-wrapped lines are joined without newlines in normal mode.
+  /// Block mode inserts a newline after each row.
   String get selectedText;
 
-  /// Currently active virtual modifier keys.
+  @override
+  TerminalSelection? get selection;
+
+  /// Sets the text selection.
+  set selection(TerminalSelection? value);
+
+  /// Terminal title set by the running program.
+  String get title;
+
+  /// Total rows: viewport plus scrollback.
+  int get totalRows;
+
+  /// Virtual modifier keys for on-screen keyboard UIs.
   ///
-  /// Virtual modifiers merge with physical keyboard modifiers for key
-  /// encoding and gesture detection. They auto-clear after producing
-  /// output (sticky behavior).
+  /// Merged with physical modifiers when encoding input. Cleared
+  /// automatically after [sendKey] or [sendText] produces output.
   ///
   /// ```dart
-  /// controller.toggleMod(Mods.ctrl);
-  /// // Next keyboard input or sendKey encodes with Ctrl, then clears.
+  /// controller.toggleMod(const Mods.ctrl());
+  /// controller.sendKey(Key.c); // Sends Ctrl+C, clears the mod.
   /// ```
   Mods get virtualMods;
 
-  /// Clears the terminal scrollback and sends a form feed to the shell.
+  /// Clears scrollback and sends a form feed via [onOutput].
   ///
-  /// Does nothing on the alternate screen. Clears any active selection.
+  /// No-op on the alternate screen.
   void clear();
 
   /// Clears the current selection.
@@ -64,41 +123,82 @@ abstract class TerminalController extends ChangeNotifier
   /// Clears all virtual modifiers.
   void clearVirtualMods();
 
-  /// Hides the soft keyboard.
+  /// Creates a [Formatter] for extracting terminal content.
+  ///
+  /// Supports plain text, HTML, and VT sequence output via [format].
+  /// Set [unwrap] to join soft-wrapped lines, [trim] to strip trailing
+  /// whitespace.
+  Formatter createFormatter({
+    required FormatterFormat format,
+    bool unwrap = false,
+    bool trim = false,
+    FormatterExtra extra = const FormatterExtra(),
+  });
+
+  /// Hides the soft keyboard and keeps it hidden.
+  ///
+  /// Stays hidden until [showKeyboard] is called. Focus changes alone
+  /// will not re-show it.
+  void disableKeyboard();
+
+  /// Hides the soft keyboard. Re-shows on next focus gain.
   void hideKeyboard();
 
-  /// Requests keyboard focus for the terminal view.
+  /// Returns the live value of a terminal [mode].
+  ///
+  /// May differ from [config] if the running program changed it.
+  bool modeGet(TerminalMode mode);
+
+  /// Sets a terminal [mode] at runtime.
+  ///
+  /// Not persisted in [config]. May be overwritten when the terminal
+  /// restores modes (e.g. exiting the alternate screen).
+  void modeSet(TerminalMode mode, {required bool value});
+
+  /// Sends paste data to the terminal via [onOutput].
+  ///
+  /// Wraps the text in bracketed paste sequences when the terminal
+  /// has bracketed paste mode enabled. Scrolls to bottom based on
+  /// [TerminalConfig.scrollToBottom] policy.
+  void paste(String text);
+
+  /// Requests keyboard focus for the attached [TerminalView].
   void requestFocus();
 
-  /// Selects all content including scrollback history.
+  /// Scrolls the viewport to the bottom (most recent content).
+  void scrollToBottom();
+
+  /// Scrolls the viewport to the top of the scrollback history.
+  void scrollToTop();
+
+  /// Selects all terminal content including scrollback.
   void selectAll();
 
-  /// Sends a key press as if typed on the keyboard.
+  /// Encodes a key press and sends it via [onOutput].
   ///
-  /// ```dart
-  /// controller.sendKey(Key.enter);
-  /// controller.sendKey(Key.keyC, mods: Mods.ctrl);
-  /// ```
-  void sendKey(Key key, {Mods mods = Mods.none});
+  /// [mods] are merged with [virtualMods]. Virtual modifiers are cleared
+  /// after output is produced.
+  void sendKey(Key key, {Mods mods = const Mods.none()});
 
-  /// Sends text as if typed. Each character is UTF-8 encoded.
+  /// Sends literal UTF-8 text via [onOutput].
   ///
-  /// ```dart
-  /// controller.sendText('ls -la\n');
-  /// ```
+  /// No key encoding is applied. Use [sendKey] for individual key
+  /// presses that need proper escape sequence encoding.
   void sendText(String text);
 
-  /// Shows the soft keyboard.
+  /// Shows the soft keyboard and re-enables it if disabled.
   void showKeyboard();
 
   /// Toggles a virtual modifier on or off.
-  ///
-  /// ```dart
-  /// controller.toggleMod(Mods.ctrl); // activates Ctrl
-  /// controller.toggleMod(Mods.ctrl); // deactivates Ctrl
-  /// ```
   void toggleMod(Mods mod);
 
-  /// Removes keyboard focus from the terminal view.
+  /// Removes keyboard focus from the attached [TerminalView].
   void unfocus();
+
+  /// Feeds raw bytes from the backend into the terminal.
+  ///
+  /// Call this with data received from your PTY, SSH channel, or socket.
+  /// The terminal processes the bytes and may call [onOutput] with
+  /// response data (e.g. for device attribute queries).
+  void write(Uint8List data);
 }

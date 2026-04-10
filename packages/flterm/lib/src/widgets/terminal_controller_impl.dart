@@ -1,9 +1,10 @@
 import 'dart:convert';
 
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart' show FocusNode;
+import 'package:flutter/widgets.dart';
 import 'package:libghostty/libghostty.dart' as vt;
-import 'package:meta/meta.dart' show internal;
+import 'package:libghostty/libghostty.dart' hide KeyEvent;
+import 'package:meta/meta.dart';
 
 import '../foundation.dart';
 import 'terminal_controller.dart';
@@ -16,81 +17,152 @@ class TerminalControllerImpl extends TerminalController
   static const _cr = 0x0d;
   static const _del = 0x7f;
   static const _formFeed = 0x0c;
-  static final _clearScrollback = utf8.encode('\x1b[3J');
+  static const _space = 0x20;
+  static const _macFunctionKeyStart = 0xF700;
+  static const _macFunctionKeyEnd = 0xF8FF;
+
   static final _crBytes = Uint8List.fromList([_cr]);
   static final _delBytes = Uint8List.fromList([_del]);
   static final _formFeedBytes = Uint8List.fromList([_formFeed]);
-
-  final vt.KeyEvent _keyEvent;
-  final vt.KeyEncoder _keyEncoder;
-  final TerminalInputClient _textInput;
-
-  var _lastModes = const vt.TerminalModes();
-  var _virtualMods = vt.Mods.none;
-  var _wasFocused = false;
-  TerminalSelection? _selection;
-  FocusNode? _focusNode;
-  vt.Terminal? _terminal;
+  static final _clearScrollback = utf8.encode('\x1b[3J');
+  static final _appCursorDown = Uint8List.fromList([0x1b, 0x4f, 0x42]);
+  static final _appCursorUp = Uint8List.fromList([0x1b, 0x4f, 0x41]);
+  static final _cursorDown = Uint8List.fromList([0x1b, 0x5b, 0x42]);
+  static final _cursorUp = Uint8List.fromList([0x1b, 0x5b, 0x41]);
 
   @override
-  ValueChanged<Uint8List>? onOutput;
+  final Terminal terminal;
+  final vt.KeyEvent _keyEvent;
+  final MouseEvent _mouseEvent;
+  final TerminalInputClient _textInput;
 
-  TerminalControllerImpl()
-    : _keyEvent = vt.KeyEvent(),
-      _keyEncoder = vt.KeyEncoder(),
+  TerminalConfig _config;
+  TerminalScreen _activeScreen = .primary;
+  MouseTracking _mouseTracking = .none;
+  KeyboardState _keyboardState = .hidden;
+  Mods _virtualMods = const .none();
+  var _cursorKeyApplication = false;
+  Brightness _brightness = .dark;
+  var _cursorBlinking = true;
+  var _wasFocused = false;
+
+  CellMetrics _lastMetrics = const .new(
+    cellWidth: 0,
+    cellHeight: 0,
+    baseline: 0,
+  );
+
+  FocusNode? _focusNode;
+  TerminalSelection? _selection;
+  ScrollController? _scrollController;
+
+  TerminalControllerImpl({TerminalConfig config = const TerminalConfig()})
+    : _config = config,
+      _keyEvent = vt.KeyEvent(),
+      _mouseEvent = MouseEvent(),
       _textInput = TerminalInputClient(),
+      terminal = Terminal(
+        cols: config.cols,
+        rows: config.rows,
+        maxScrollback: config.scrollbackLimit,
+      ),
       super.base() {
     _textInput
       ..onTextCommitted = _handleTextCommitted
       ..onDelete = _handleDelete
       ..onNewline = _handleNewline;
+    _wireTerminalCallbacks();
+    _applyModes();
+    terminal.addListener(_onTerminalChanged);
   }
 
-  FocusNode? get focusNode => _focusNode;
+  @override
+  TerminalScreen get activeScreen => _activeScreen;
 
   @override
-  set focusNode(FocusNode? value) {
-    if (_focusNode == value) return;
-    _focusNode?.removeListener(_onFocusChanged);
-    _focusNode = value;
-    _wasFocused = value?.hasFocus ?? false;
-    _focusNode?.addListener(_onFocusChanged);
+  set brightness(Brightness value) {
+    _textInput.keyboardAppearance = value;
+    _brightness = value;
+  }
+
+  @override
+  TerminalConfig get config => _config;
+
+  @override
+  set config(TerminalConfig value) {
+    if (_config == value) return;
+    _config = value;
+    _applyModes();
+    _wireTerminalCallbacks();
+    notifyListeners();
+  }
+
+  @override
+  bool get cursorBlinks {
+    if (!_cursorBlinking || !hasFocus) return false;
+    if (_activeScreen == .alternate) return true;
+    final sc = _scrollController;
+    if (sc == null || !sc.hasClients) return true;
+    final pos = sc.position;
+    if (!pos.hasContentDimensions) return true;
+    return pos.pixels >= pos.maxScrollExtent - 1.0;
   }
 
   @override
   bool get hasFocus => _focusNode?.hasFocus ?? false;
 
   @override
+  KeyboardState get keyboardState => _keyboardState;
+
+  @override
+  MouseTracking get mouseTracking => _mouseTracking;
+
+  @override
+  String get pwd => terminal.pwd;
+
+  @override
+  int get scrollbackRows => terminal.scrollbackRows;
+
+  @override
+  Scrollbar get scrollbar => terminal.scrollbar;
+
+  @override
   String get selectedText {
     final selection = _selection;
-    if (_terminal == null || selection == null) return '';
+    if (selection == null) return '';
 
     final buffer = StringBuffer();
-    final selectionMode = selection.mode;
-    final scrollbackLen = _terminal!.scrollback.length;
+    final cols = terminal.renderState.cols;
 
-    for (var row = selection.topRow; row <= selection.bottomRow; row++) {
-      final line = _lineAt(row, scrollbackLen);
-      if (line == null || line.length == 0) continue;
+    final total = terminal.totalRows;
+    final maxRow = selection.bottomRow < total
+        ? selection.bottomRow
+        : total - 1;
 
-      final cols = line.length;
+    for (var row = selection.topRow; row <= maxRow; row++) {
       final startCol = switch (selection.mode) {
         .block => selection.topCol,
         _ => (row == selection.topRow ? selection.topCol : 0),
       };
-      final endCol = switch (selectionMode) {
+      final endCol = switch (selection.mode) {
         .block => selection.bottomCol,
         _ => (row == selection.bottomRow ? selection.bottomCol : cols),
       };
 
       for (var col = startCol; col < endCol && col < cols; col++) {
-        final cell = line.cellAt(col);
-        if (cell.wide == .spacerTail || cell.wide == .spacerHead) continue;
-        buffer.write(cell.content.isEmpty ? ' ' : cell.content);
+        final ref = terminal.gridRefAt(col: col, row: row, pointTag: .screen);
+        final wide = ref.wide;
+        if (wide == .spacerTail || wide == .spacerHead) {
+          ref.dispose();
+          continue;
+        }
+        final content = ref.content;
+        ref.dispose();
+        buffer.write(content.isEmpty ? ' ' : content);
       }
 
-      if (row < selection.bottomRow) {
-        if (selectionMode == .block || !_isRowWrapped(row, scrollbackLen)) {
+      if (row < maxRow) {
+        if (selection.mode == .block || !_isRowWrapped(row)) {
           buffer.write('\n');
         }
       }
@@ -110,21 +182,27 @@ class TerminalControllerImpl extends TerminalController
   }
 
   @override
-  set terminal(vt.Terminal? value) => _terminal = value;
+  String get title => terminal.title;
 
   @override
-  vt.Mods get virtualMods => _virtualMods;
+  int get totalRows => terminal.totalRows;
 
   @override
-  void attachInput({Brightness keyboardAppearance = Brightness.dark}) {
-    _textInput.attach(keyboardAppearance: keyboardAppearance);
+  Mods get virtualMods => _virtualMods;
+
+  @override
+  void attach(FocusNode focusNode, ScrollController scrollController) {
+    _focusNode?.removeListener(_onFocusChanged);
+    _focusNode = focusNode;
+    _wasFocused = focusNode.hasFocus;
+    _focusNode!.addListener(_onFocusChanged);
+    _textInput.keyboardAppearance = _brightness;
+    _scrollController = scrollController;
   }
 
   @override
   void clear() {
-    final terminal = _terminal;
-    if (terminal == null) return;
-    if (terminal.modes.screenMode == vt.ScreenMode.alternate) return;
+    if (_activeScreen == .alternate) return;
     clearSelection();
     terminal.write(_clearScrollback);
     _emitOutput(_formFeedBytes);
@@ -136,98 +214,238 @@ class TerminalControllerImpl extends TerminalController
   @override
   void clearVirtualMods() {
     if (_virtualMods.isEmpty) return;
-    _virtualMods = vt.Mods.none;
+    _virtualMods = const .none();
     notifyListeners();
   }
 
   @override
-  void detachInput() => _textInput.detach();
+  Formatter createFormatter({
+    required FormatterFormat format,
+    bool unwrap = false,
+    bool trim = false,
+    FormatterExtra extra = const FormatterExtra(),
+  }) {
+    return terminal.createFormatter(
+      format: format,
+      unwrap: unwrap,
+      trim: trim,
+      extra: extra,
+    );
+  }
+
+  @override
+  void detach() {
+    _focusNode?.removeListener(_onFocusChanged);
+    _focusNode = null;
+    _wasFocused = false;
+    _keyboardState = .hidden;
+    _scrollController = null;
+    _textInput.detach();
+  }
+
+  @override
+  void disableKeyboard() => _updateKeyboardState(.disabled);
 
   @override
   void dispose() {
-    _focusNode?.removeListener(_onFocusChanged);
+    terminal.removeListener(_onTerminalChanged);
+    detach();
     _keyEvent.dispose();
-    _keyEncoder.dispose();
-    _textInput.detach();
+    _mouseEvent.dispose();
+    terminal.dispose();
     super.dispose();
   }
 
   @override
-  Uint8List? encodeKeyboardEvent(KeyEvent event) {
+  KeyEventResult handleKeyEvent(KeyEvent event) {
+    if ((event is KeyDownEvent || event is KeyRepeatEvent) &&
+        HardwareKeyboard.instance.isShiftPressed &&
+        _selection != null) {
+      if (_extendSelection(event.logicalKey)) return .handled;
+    }
+
     final key = keyFromPhysical(event.physicalKey);
-    final action = switch (event) {
-      KeyDownEvent() => vt.KeyAction.press,
-      KeyUpEvent() => vt.KeyAction.release,
-      KeyRepeatEvent() => vt.KeyAction.repeat,
+    final KeyAction? action = switch (event) {
+      KeyDownEvent() => .press,
+      KeyUpEvent() => .release,
+      KeyRepeatEvent() => .repeat,
       _ => null,
     };
 
-    if (action == null) return null;
-
-    var mods = _virtualMods;
-    final keyboard = HardwareKeyboard.instance;
-    if (keyboard.isShiftPressed) mods = mods | vt.Mods.shift;
-    if (keyboard.isControlPressed) mods = mods | vt.Mods.ctrl;
-    if (keyboard.isAltPressed) mods = mods | vt.Mods.alt;
-    if (keyboard.isMetaPressed) mods = mods | vt.Mods.superKey;
+    if (action == null) return .ignored;
 
     _keyEvent
       ..key = key
-      ..mods = mods
+      ..mods = _currentMods()
       ..action = action
-      ..utf8 = event.character
+      ..utf8 = _encoderCharacter(event.character)
       ..unshiftedCodepoint = unshiftedCodepointForKey(key);
 
-    final result = _keyEncoder.encode(_keyEvent);
-    if (result.isEmpty) return null;
+    terminal.keyEncoder.syncFrom(terminal);
+    final result = terminal.keyEncoder.encode(_keyEvent);
+    if (result.isEmpty) return .ignored;
+
     clearVirtualMods();
-    return utf8.encode(result);
+    _emitOutput(utf8.encode(result));
+    _onTextInput();
+
+    return .handled;
   }
 
   @override
-  void hideKeyboard() => _textInput.hide();
+  void handleMouseEvent(TerminalMouseEvent event) {
+    _mouseEvent
+      ..action = event.action
+      ..button = event.button
+      ..mods = _currentMods()
+      ..setPosition(x: event.pixelX, y: event.pixelY);
+    terminal.mouseEncoder.syncFrom(terminal);
+    final result = terminal.mouseEncoder.encode(_mouseEvent);
+    if (result.isEmpty) return;
+    _emitOutput(utf8.encode(result));
+  }
+
+  @override
+  void handleResize({
+    required int cols,
+    required int rows,
+    required CellMetrics metrics,
+    required EdgeInsets padding,
+  }) {
+    _lastMetrics = metrics;
+    terminal.mouseEncoder.setSize(
+      MouseEncoderSize(
+        screenWidth: (cols * metrics.cellWidth).round(),
+        screenHeight: (rows * metrics.cellHeight).round(),
+        cellWidth: metrics.cellWidth.round(),
+        cellHeight: metrics.cellHeight.round(),
+        paddingLeft: padding.left.round(),
+        paddingRight: padding.right.round(),
+        paddingTop: padding.top.round(),
+        paddingBottom: padding.bottom.round(),
+      ),
+    );
+    onResize?.call(cols, rows);
+
+    if (terminal.modeGet(const TerminalMode.inBandResize())) {
+      final report = SizeReportStyle.mode2048.encode(
+        rows: rows,
+        columns: cols,
+        cellWidth: metrics.cellWidth.round(),
+        cellHeight: metrics.cellHeight.round(),
+      );
+      _emitOutput(utf8.encode(report));
+    }
+  }
+
+  @override
+  void handleScroll(int lines) {
+    if (_activeScreen != .alternate || lines == 0) return;
+
+    if (_mouseTracking != .none) {
+      final button = lines < 0 ? MouseButton.four : MouseButton.five;
+      final count = lines.abs();
+
+      if (count > 0) terminal.mouseEncoder.syncFrom(terminal);
+
+      for (var i = 0; i < count; i++) {
+        _mouseEvent
+          ..action = .press
+          ..button = button
+          ..mods = _currentMods()
+          ..setPosition(x: 0, y: 0);
+        final result = terminal.mouseEncoder.encode(_mouseEvent);
+        if (result.isNotEmpty) _emitOutput(utf8.encode(result));
+      }
+      return;
+    }
+
+    final up = _cursorKeyApplication ? _appCursorUp : _cursorUp;
+    final down = _cursorKeyApplication ? _appCursorDown : _cursorDown;
+    final key = lines < 0 ? up : down;
+    final count = lines.abs();
+    final bytes = Uint8List(key.length * count);
+    for (var i = 0; i < count; i++) {
+      bytes.setRange(i * key.length, (i + 1) * key.length, key);
+    }
+    _emitOutput(bytes);
+  }
+
+  @override
+  void hideKeyboard() => _updateKeyboardState(.hidden);
+
+  @override
+  bool modeGet(TerminalMode mode) => terminal.modeGet(mode);
+
+  @override
+  void modeSet(TerminalMode mode, {required bool value}) {
+    terminal.modeSet(mode, value: value);
+  }
+
+  @override
+  void paste(String text) {
+    if (text.isEmpty) return;
+    final bracketed = terminal.modeGet(const .bracketedPaste());
+    _emitOutput(pasteEncode(text, bracketed: bracketed));
+    _scrollToBottomOnInput();
+  }
 
   @override
   void requestFocus() => _focusNode?.requestFocus();
 
   @override
-  void selectAll() {
-    final terminal = _terminal;
-    if (terminal == null) return;
+  void scrollToBottom() {
+    if (_activeScreen == .alternate) return;
+    terminal.scrollToBottom();
+    final controller = _scrollController;
+    if (controller != null && controller.hasClients) {
+      final max = controller.position.maxScrollExtent;
+      if (max.isFinite) controller.jumpTo(max);
+    }
+  }
 
-    final screen = terminal.screen;
-    final scrollbackLen = terminal.scrollback.length;
+  @override
+  void scrollToTop() {
+    if (_activeScreen == .alternate) return;
+    terminal.scrollToTop();
+    final controller = _scrollController;
+    if (controller != null && controller.hasClients) controller.jumpTo(0);
+  }
+
+  @override
+  void selectAll() {
+    terminal.scrollToBottom();
+    final scrollbackLen = terminal.scrollbackRows;
+    final rows = terminal.renderState.rows;
+    final cols = terminal.renderState.cols;
 
     var lastScreenRow = -1;
-    for (var row = screen.rows - 1; row >= 0; row--) {
-      final line = screen.lineAt(row);
-      for (var col = 0; col < line.length; col++) {
-        if (!line.cellAt(col).isEmpty) {
-          lastScreenRow = row;
-          break;
-        }
+    var lastContentCol = 0;
+    for (var row = 0; row < rows; row++) {
+      var rowLastCol = 0;
+      for (var col = 0; col < cols; col++) {
+        final ref = terminal.gridRefAt(col: col, row: row);
+        final hasContent = ref.graphemes.isNotEmpty;
+        ref.dispose();
+        if (hasContent) rowLastCol = col + 1;
       }
-      if (lastScreenRow >= 0) break;
+      if (rowLastCol > 0) {
+        lastScreenRow = row;
+        lastContentCol = rowLastCol;
+      }
     }
 
     if (lastScreenRow < 0 && scrollbackLen == 0) return;
 
-    int endRow;
-    int endCol;
+    final int endRow;
+    final int endCol;
 
     if (lastScreenRow >= 0) {
       endRow = scrollbackLen + lastScreenRow;
-      endCol = 0;
-      final line = screen.lineAt(lastScreenRow);
-      for (var col = line.length - 1; col >= 0; col--) {
-        if (!line.cellAt(col).isEmpty) {
-          endCol = col + 1;
-          break;
-        }
-      }
+      endCol = lastContentCol;
     } else {
       endRow = scrollbackLen - 1;
-      endCol = screen.cols;
+      endCol = cols;
     }
 
     selection = TerminalSelection(
@@ -239,17 +457,49 @@ class TerminalControllerImpl extends TerminalController
   }
 
   @override
-  void sendKey(vt.Key key, {vt.Mods mods = vt.Mods.none}) {
+  void selectLine(int row, LineSelectMode lineSelectMode) {
+    final (:startRow, :endRow, :endCol) = terminal.lineBoundaryAt(row);
+    final effectiveEndCol = switch (lineSelectMode) {
+      .full => terminal.renderState.cols,
+      .content => endCol,
+    };
+    selection = TerminalSelection(
+      startRow: startRow,
+      startCol: 0,
+      endRow: endRow,
+      endCol: effectiveEndCol,
+    ).scroll(scrollbar.offset);
+  }
+
+  @override
+  void selectWord(int row, int col) {
+    final adjCol = terminal.snapColToWideBoundary(row, col, inclusive: true);
+    final (startCol, endCol) = terminal.wordBoundaryAt(
+      row,
+      adjCol,
+      wordPattern: _config.wordPattern,
+    );
+    selection = TerminalSelection(
+      startRow: row,
+      startCol: startCol,
+      endRow: row,
+      endCol: endCol,
+    ).scroll(scrollbar.offset);
+  }
+
+  @override
+  void sendKey(vt.Key key, {Mods mods = const .none()}) {
     final effectiveMods = mods | _virtualMods;
     final codepoint = unshiftedCodepointForKey(key);
     _keyEvent
       ..key = key
       ..mods = effectiveMods
-      ..action = vt.KeyAction.press
+      ..action = .press
       ..unshiftedCodepoint = codepoint
       ..utf8 = codepoint > 0 ? String.fromCharCode(codepoint) : null;
 
-    final result = _keyEncoder.encode(_keyEvent);
+    terminal.keyEncoder.syncFrom(terminal);
+    final result = terminal.keyEncoder.encode(_keyEvent);
     if (result.isEmpty) return;
     _emitOutput(utf8.encode(result));
     clearVirtualMods();
@@ -263,29 +513,14 @@ class TerminalControllerImpl extends TerminalController
   }
 
   @override
-  void showKeyboard() => _textInput.show();
+  void showKeyboard() => _updateKeyboardState(.showing);
 
-  @override
-  vt.MouseTracking? syncModes(vt.TerminalModes modes) {
-    if (modes == _lastModes) return null;
-
-    if (modes.cursorKeyApplication != _lastModes.cursorKeyApplication) {
-      _keyEncoder.setCursorKeyApplication(enabled: modes.cursorKeyApplication);
-    }
-    if (modes.keypadApplication != _lastModes.keypadApplication) {
-      _keyEncoder.setKeypadKeyApplication(enabled: modes.keypadApplication);
-    }
-
-    final mouseChanged = modes.mouseTracking != _lastModes.mouseTracking;
-    _lastModes = modes;
-    return mouseChanged ? modes.mouseTracking : null;
-  }
-
+  @visibleForTesting
   @override
   void testCommitText(String text) => _handleTextCommitted(text);
 
   @override
-  void toggleMod(vt.Mods mod) {
+  void toggleMod(Mods mod) {
     _virtualMods = _virtualMods ^ mod;
     notifyListeners();
   }
@@ -293,24 +528,97 @@ class TerminalControllerImpl extends TerminalController
   @override
   void unfocus() => _focusNode?.unfocus();
 
+  @override
+  void updateSelection(
+    int startRow,
+    int startCol,
+    int endRow,
+    int endCol,
+    TerminalSelectionMode mode,
+  ) {
+    final (sc, ec) = terminal.snapSelectionCols(
+      startRow,
+      startCol,
+      endRow,
+      endCol,
+    );
+    selection = TerminalSelection(
+      startRow: startRow,
+      startCol: sc,
+      endRow: endRow,
+      endCol: ec,
+      mode: mode,
+    ).scroll(scrollbar.offset);
+  }
+
+  @override
+  void write(Uint8List data) => terminal.write(data);
+
+  void _applyModes() {
+    for (final entry in _config.modes.entries) {
+      terminal.modeSet(entry.key, value: entry.value);
+    }
+  }
+
+  Mods _currentMods() {
+    var mods = _virtualMods;
+    final keyboard = HardwareKeyboard.instance;
+    if (keyboard.isShiftPressed) mods = mods | const .shift();
+    if (keyboard.isControlPressed) mods = mods | const .ctrl();
+    if (keyboard.isAltPressed) mods = mods | const .alt();
+    if (keyboard.isMetaPressed) mods = mods | const .superKey();
+    return mods;
+  }
+
   void _emitOutput(Uint8List bytes) => onOutput?.call(bytes);
+
+  bool _extendSelection(LogicalKeyboardKey arrowKey) {
+    final (dRow, dCol) = switch (arrowKey) {
+      .arrowRight => (0, 1),
+      .arrowLeft => (0, -1),
+      .arrowUp => (-1, 0),
+      .arrowDown => (1, 0),
+      _ => (0, 0),
+    };
+    if (dRow == 0 && dCol == 0) return false;
+    selection = _selection!.moveEnd(
+      dRow,
+      dCol,
+      totalCols: terminal.renderState.cols,
+      totalRows: totalRows,
+    );
+    return true;
+  }
 
   void _handleDelete(int count) {
     if (count == 1) {
       _emitOutput(_delBytes);
-      return;
+    } else {
+      _emitOutput(Uint8List(count)..fillRange(0, count, _del));
     }
-    _emitOutput(Uint8List(count)..fillRange(0, count, _del));
+    _onTextInput();
   }
 
   void _handleNewline() {
     _emitOutput(_crBytes);
     clearVirtualMods();
+    _onTextInput();
+  }
+
+  TerminalSizeInfo _handleSizeQuery() {
+    final rs = terminal.renderState;
+    return TerminalSizeInfo(
+      rows: rs.rows,
+      columns: rs.cols,
+      cellWidth: _lastMetrics.cellWidth.round(),
+      cellHeight: _lastMetrics.cellHeight.round(),
+    );
   }
 
   void _handleTextCommitted(String text) {
     if (_virtualMods.isEmpty) {
       _emitOutput(utf8.encode(text));
+      _onTextInput();
       return;
     }
 
@@ -324,31 +632,131 @@ class TerminalControllerImpl extends TerminalController
 
     _emitOutput(utf8.encode(text));
     clearVirtualMods();
+    _onTextInput();
   }
 
-  bool _isRowWrapped(int absoluteRow, int scrollbackLen) {
-    if (absoluteRow < scrollbackLen) {
-      return _terminal!.scrollback.isRowWrapped(absoluteRow);
-    }
-    final screenRow = absoluteRow - scrollbackLen;
-    if (screenRow >= _terminal!.screen.rows) return false;
-    return _terminal!.screen.isRowWrapped(screenRow);
-  }
-
-  vt.Line? _lineAt(int absoluteRow, int scrollbackLen) {
-    if (absoluteRow < 0) return null;
-    if (absoluteRow < scrollbackLen) {
-      return _terminal!.scrollback.lineAt(absoluteRow);
-    }
-    final screenRow = absoluteRow - scrollbackLen;
-    if (screenRow >= _terminal!.screen.rows) return null;
-    return _terminal!.screen.lineAt(screenRow);
+  bool _isRowWrapped(int row) {
+    final ref = terminal.gridRefAt(col: 0, row: row, pointTag: .screen);
+    final wrapped = ref.rowWrap;
+    ref.dispose();
+    return wrapped;
   }
 
   void _onFocusChanged() {
     final focused = _focusNode?.hasFocus ?? false;
     if (focused == _wasFocused) return;
     _wasFocused = focused;
+
+    if (focused && _keyboardState != .disabled) {
+      _keyboardState = .showing;
+      _textInput.show();
+    } else if (!focused && _keyboardState == .showing) {
+      _keyboardState = .hidden;
+      _textInput.hide();
+    }
+
+    if (!focused) clearVirtualMods();
+
+    if (terminal.modeGet(const TerminalMode.focusEvent())) {
+      final event = focused ? FocusEvent.gained : FocusEvent.lost;
+      _emitOutput(utf8.encode(event.encode()));
+    }
+
     notifyListeners();
+  }
+
+  void _onTerminalChanged() {
+    var changed = false;
+
+    final newMouseTracking = terminal.mouseTracking;
+    if (newMouseTracking != _mouseTracking) {
+      _mouseTracking = newMouseTracking;
+      changed = true;
+    }
+
+    final newActiveScreen = terminal.activeScreen;
+    if (newActiveScreen != _activeScreen) {
+      _activeScreen = newActiveScreen;
+      if (newActiveScreen == .primary) {
+        _applyModes();
+        if (_keyboardState == .disabled) _keyboardState = .hidden;
+      } else {
+        disableKeyboard();
+      }
+      changed = true;
+    }
+
+    final newCursorKeyApp = terminal.modeGet(const .cursorKeys());
+    if (newCursorKeyApp != _cursorKeyApplication) {
+      _cursorKeyApplication = newCursorKeyApp;
+      changed = true;
+    }
+
+    final newCursorBlinking =
+        _config.cursorBlink ?? terminal.modeGet(const .cursorBlinking());
+    if (newCursorBlinking != _cursorBlinking) {
+      _cursorBlinking = newCursorBlinking;
+      changed = true;
+    }
+
+    _scrollToBottomOnOutput();
+    if (changed) notifyListeners();
+  }
+
+  void _onTextInput() {
+    if (_config.selectionClearOnTyping) clearSelection();
+    _scrollToBottomOnInput();
+  }
+
+  void _scrollToBottomOnInput() {
+    if (_activeScreen == .alternate) return;
+    final policy = _config.scrollToBottom;
+    if (policy == .onKeystroke || policy == .both) scrollToBottom();
+  }
+
+  void _scrollToBottomOnOutput() {
+    if (_activeScreen == .alternate) return;
+    final policy = _config.scrollToBottom;
+    if (policy == .onOutput || policy == .both) scrollToBottom();
+  }
+
+  Future<void> _updateKeyboardState(KeyboardState newState) async {
+    if (newState == _keyboardState) return;
+    _keyboardState = newState;
+
+    switch (newState) {
+      case .showing when hasFocus:
+        _focusNode?.requestFocus();
+        _textInput.show();
+      case .showing:
+        _focusNode?.requestFocus();
+      case .hidden || .disabled:
+        _textInput.hide();
+    }
+
+    notifyListeners();
+  }
+
+  void _wireTerminalCallbacks() {
+    terminal.onWritePty = _emitOutput;
+    terminal.onBell = () => onBell?.call();
+    terminal.onTitleChanged = () => onTitleChanged?.call();
+    terminal.onColorScheme = () => _brightness == .light ? .light : .dark;
+    terminal.onSize = _handleSizeQuery;
+    terminal.onDeviceAttributes = () => _config.deviceAttributes;
+    final enquiry = _config.enquiryResponse;
+    terminal.onEnquiry = enquiry.isEmpty
+        ? null
+        : () => .fromList(utf8.encode(enquiry));
+  }
+
+  /// Filters out control characters and macOS function key private-use
+  /// codepoints that should not be sent as UTF-8 text to the key encoder.
+  static String? _encoderCharacter(String? character) {
+    if (character == null || character.isEmpty) return null;
+    final code = character.codeUnitAt(0);
+    if (code < _space || code == _del) return null;
+    if (code >= _macFunctionKeyStart && code <= _macFunctionKeyEnd) return null;
+    return character;
   }
 }

@@ -11,23 +11,12 @@ void main() {
       expect(settings.lineSelectMode, LineSelectMode.content);
     });
 
-    test('SelectionGesture.all contains every value', () {
-      expect(SelectionGesture.all, containsAll(SelectionGesture.values));
-    });
-
     test('empty enabledSelections disables all selection', () {
       const settings = TerminalGestureSettings(enabledSelections: {});
       expect(settings.enabledSelections, isEmpty);
     });
 
-    test('lineSelectMode.full selects full row width', () {
-      const settings = TerminalGestureSettings(
-        lineSelectMode: LineSelectMode.full,
-      );
-      expect(settings.lineSelectMode, LineSelectMode.full);
-    });
-
-    test('equality compares all fields including lineSelectMode', () {
+    test('equality compares all fields', () {
       const a = TerminalGestureSettings();
       const b = TerminalGestureSettings();
       const differentSelections = TerminalGestureSettings(

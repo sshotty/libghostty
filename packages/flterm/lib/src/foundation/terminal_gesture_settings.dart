@@ -3,34 +3,51 @@ import 'package:flutter/foundation.dart';
 import 'terminal_selection.dart';
 
 /// A modifier key used to trigger gesture behaviors.
+///
+/// Used by [TerminalGestureSettings.blockSelectionModifier] to choose
+/// which held key switches from normal to block selection during drag.
 enum GestureModifier { alt, control, meta, shift }
 
 /// How triple-click line selection determines the end column.
+///
+/// Configures the trailing edge behavior when the gesture detector
+/// resolves a line selection via [TerminalGestureSettings.lineSelectMode].
 enum LineSelectMode {
-  /// Selection ends at the last content cell, excluding trailing empties.
+  /// Selection ends at the last non-empty cell, trimming trailing blanks.
   content,
 
-  /// Selection extends to the full row width.
+  /// Selection extends to the full row width regardless of content.
   full,
 }
 
-/// A type of selection gesture.
+/// A type of selection gesture recognized by the gesture detector.
+///
+/// Each gesture maps to a distinct user interaction pattern. Disable
+/// individual gestures via [TerminalGestureSettings.enabledSelections].
+///
+/// ```dart
+/// // Disable drag selection, keep word and line selection.
+/// TerminalGestureSettings(
+///   enabledSelections: {SelectionGesture.word, SelectionGesture.line},
+/// )
+/// ```
 enum SelectionGesture {
-  /// Click+drag on desktop (mouse).
+  /// Click and drag on desktop.
   drag,
 
-  /// Double-tap word selection.
+  /// Double-tap to select a word.
   word,
 
-  /// Triple-tap line selection.
+  /// Triple-tap to select a logical line (follows soft wraps).
   line,
 
   /// Long press on touch devices.
   longPress,
 
-  /// Select all via keyboard shortcut (Cmd+A / Ctrl+A).
+  /// Select all via keyboard shortcut (Cmd+A on macOS, Ctrl+A elsewhere).
   selectAll;
 
+  /// All recognized selection gestures.
   static const all = <SelectionGesture>{
     .drag,
     .word,
@@ -42,9 +59,13 @@ enum SelectionGesture {
 
 /// Controls which selection gestures are enabled and how they behave.
 ///
+/// Passed to [TerminalView.gestureSettings]. Only affects selection
+/// behavior: mouse tracking (for terminal programs) and focus gestures
+/// work regardless of these settings.
+///
 /// ```dart
 /// TerminalView(
-///   terminal: terminal,
+///   controller: controller,
 ///   gestureSettings: TerminalGestureSettings(
 ///     enabledSelections: {SelectionGesture.word, SelectionGesture.line},
 ///     blockSelectionModifier: GestureModifier.meta,
@@ -55,37 +76,39 @@ enum SelectionGesture {
 final class TerminalGestureSettings {
   /// Which selection gestures are active.
   ///
-  /// Defaults to all gestures enabled. Pass an empty set to disable
-  /// selection entirely. Mouse tracking and focus gestures still work
-  /// regardless of this setting.
+  /// Defaults to [SelectionGesture.all]. Pass an empty set to disable
+  /// text selection entirely while keeping mouse tracking and focus
+  /// functional.
   final Set<SelectionGesture> enabledSelections;
 
   /// How triple-click line selection determines the end column.
   ///
-  /// Defaults to [LineSelectMode.content], which trims trailing empty
-  /// cells. Set to [LineSelectMode.full] to always select the full
-  /// row width.
+  /// [LineSelectMode.content] (default) trims trailing empty cells.
+  /// [LineSelectMode.full] always selects the full row width, which
+  /// is useful when pasting output where trailing whitespace matters.
   final LineSelectMode lineSelectMode;
 
-  /// Modifier key that triggers block (rectangular) selection during drag.
+  /// Modifier key that switches drag selection to block (rectangular) mode.
   ///
-  /// Set to null to disable block selection via modifier key.
+  /// Defaults to [GestureModifier.alt], matching most desktop terminals.
+  /// Set to null to disable modifier-based block selection.
   ///
-  /// Avoid [GestureModifier.shift] here: Shift is also used to bypass
-  /// mouse tracking, so the two behaviors would overlap.
+  /// Avoid [GestureModifier.shift]: Shift is used to bypass terminal
+  /// mouse tracking, and the two behaviors would conflict.
   final GestureModifier? blockSelectionModifier;
 
-  /// Selection mode used when long-pressing on touch devices.
+  /// Selection mode used for long-press gestures on touch devices.
   ///
-  /// Defaults to [TerminalSelectionMode.normal]. Set to
-  /// [TerminalSelectionMode.block] for rectangular selection on long press.
+  /// Defaults to [TerminalSelectionMode.normal] for linear text selection.
+  /// Set to [TerminalSelectionMode.block] to start a rectangular selection
+  /// on long press.
   final TerminalSelectionMode longPressSelectionMode;
 
   const TerminalGestureSettings({
-    this.lineSelectMode = LineSelectMode.content,
+    this.lineSelectMode = .content,
+    this.blockSelectionModifier = .alt,
+    this.longPressSelectionMode = .normal,
     this.enabledSelections = SelectionGesture.all,
-    this.blockSelectionModifier = GestureModifier.alt,
-    this.longPressSelectionMode = TerminalSelectionMode.normal,
   });
 
   @override

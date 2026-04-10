@@ -6,13 +6,7 @@ void main() {
   group('ColorPalette', () {
     late ColorPalette palette;
 
-    setUp(() {
-      palette = ColorPalette.fromAnsiColors(
-        ansiColors: _ansiColors,
-        background: _bg,
-        foreground: _fg,
-      );
-    });
+    setUp(() => palette = ColorPalette.fromAnsiColors(_ansiColors));
 
     test('indices 0–15 match the provided ANSI colors', () {
       for (var i = 0; i < 16; i++) {
@@ -33,50 +27,34 @@ void main() {
     });
 
     test('equality and hashCode', () {
-      final other = ColorPalette.fromAnsiColors(
-        ansiColors: _ansiColors,
-        background: _bg,
-        foreground: _fg,
-      );
+      final other = ColorPalette.fromAnsiColors(_ansiColors);
       expect(palette, equals(other));
       expect(palette.hashCode, other.hashCode);
     });
 
-    test('cube corner index 16 approximates the background color', () {
-      // Index 16 = cube corner (0,0,0) which collapses to bg in CIELAB.
-      final bg = palette[16];
-      // Allow small rounding differences from color space conversions.
-      expect((_r(bg) - _r(_bg)).abs(), lessThanOrEqualTo(2));
-      expect((_g(bg) - _g(_bg)).abs(), lessThanOrEqualTo(2));
-      expect((_b(bg) - _b(_bg)).abs(), lessThanOrEqualTo(2));
+    test('index 16 is black (cube 0,0,0)', () {
+      expect(palette[16], const Color(0xFF000000));
     });
 
-    test('cube corner index 231 approximates the foreground color', () {
-      // Index 231 = cube corner (5,5,5) which collapses to fg in CIELAB.
-      final fg = palette[231];
-      expect((_r(fg) - _r(_fg)).abs(), lessThanOrEqualTo(2));
-      expect((_g(fg) - _g(_fg)).abs(), lessThanOrEqualTo(2));
-      expect((_b(fg) - _b(_fg)).abs(), lessThanOrEqualTo(2));
+    test('index 231 is white (cube 5,5,5)', () {
+      expect(palette[231], const Color(0xFFFFFFFF));
     });
 
-    test('grayscale ramp (232–255) increases in perceived brightness', () {
-      double luma(Color c) => 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
-      for (var i = 233; i < 256; i++) {
-        expect(
-          luma(palette[i]),
-          greaterThanOrEqualTo(luma(palette[i - 1])),
-          reason: 'index $i should not be darker than ${i - 1}',
-        );
+    test('standard cube color at index 196 is red (5,0,0)', () {
+      // r=5 → 5*40+55=255, g=0, b=0
+      expect(palette[196], const Color(0xFFFF0000));
+    });
+
+    test('grayscale ramp values match standard formula', () {
+      for (var i = 232; i < 256; i++) {
+        final v = (i - 232) * 10 + 8;
+        expect(palette[i], Color.fromARGB(255, v, v, v), reason: 'index $i');
       }
     });
 
     test('requires exactly 16 ANSI colors', () {
       expect(
-        () => ColorPalette.fromAnsiColors(
-          ansiColors: const [Color(0xFF000000)],
-          background: _bg,
-          foreground: _fg,
-        ),
+        () => ColorPalette.fromAnsiColors(const [Color(0xFF000000)]),
         throwsArgumentError,
       );
     });
@@ -101,12 +79,3 @@ const _ansiColors = [
   Color(0xFF64C8C8), // 14: bright cyan
   Color(0xFFDCDCDC), // 15: bright white
 ];
-const _bg = Color(0xFF181818);
-
-const _fg = Color(0xFFD8D8D8);
-
-int _b(Color c) => (c.b * 255.0).round().clamp(0, 255);
-
-int _g(Color c) => (c.g * 255.0).round().clamp(0, 255);
-
-int _r(Color c) => (c.r * 255.0).round().clamp(0, 255);
