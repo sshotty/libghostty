@@ -1,9 +1,9 @@
-import 'dart:convert';
-
 import 'package:flterm/flterm.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:libghostty/libghostty.dart';
+
+import 'demo_page.dart';
+import 'themes.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -15,71 +15,100 @@ Future<void> main() async {
   runApp(const _App());
 }
 
-class _App extends StatelessWidget {
+class _App extends StatefulWidget {
   const _App();
 
   @override
+  State<_App> createState() => _AppState();
+}
+
+class _AppState extends State<_App> {
+  var _themeIndex = 0;
+
+  @override
   Widget build(BuildContext context) {
+    final entry = TerminalThemes.all[_themeIndex];
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'flterm_example',
       theme: ThemeData.dark(),
-      home: const _DemoScreen(),
+      home: Scaffold(
+        backgroundColor: entry.theme.background,
+        body: SafeArea(child: DemoPage(theme: entry.theme)),
+        floatingActionButton: Builder(
+          builder: (innerContext) => FloatingActionButton(
+            onPressed: () => _showThemePicker(innerContext),
+            tooltip: 'Theme',
+            backgroundColor: Colors.black54,
+            foregroundColor: Colors.white,
+            child: const Icon(Icons.palette),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showThemePicker(BuildContext context) {
+    final isLarge = MediaQuery.of(context).size.width >= 600;
+    if (isLarge) {
+      return showDialog<void>(
+        context: context,
+        builder: (dialogContext) => Dialog(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 360, maxHeight: 480),
+            child: _ThemeList(
+              currentIndex: _themeIndex,
+              onSelect: (i) {
+                setState(() => _themeIndex = i);
+                Navigator.of(dialogContext).pop();
+              },
+            ),
+          ),
+        ),
+      );
+    }
+    return showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: _ThemeList(
+          currentIndex: _themeIndex,
+          onSelect: (i) {
+            setState(() => _themeIndex = i);
+            Navigator.of(sheetContext).pop();
+          },
+        ),
+      ),
     );
   }
 }
 
-class _DemoScreen extends StatefulWidget {
-  const _DemoScreen();
+class _ThemeList extends StatelessWidget {
+  final int currentIndex;
+  final ValueChanged<int> onSelect;
 
-  @override
-  State<_DemoScreen> createState() => _DemoScreenState();
-}
-
-class _DemoScreenState extends State<_DemoScreen> {
-  late final Terminal _terminal;
-  late final TerminalController _controller;
+  const _ThemeList({required this.currentIndex, required this.onSelect});
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: TerminalView(terminal: _terminal, controller: _controller),
+    return ListView.builder(
+      shrinkWrap: true,
+      itemCount: TerminalThemes.all.length,
+      itemBuilder: (_, i) {
+        final entry = TerminalThemes.all[i];
+        return ListTile(
+          leading: Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: entry.theme.background,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: entry.theme.foreground),
+            ),
+          ),
+          title: Text(entry.name),
+          selected: i == currentIndex,
+          onTap: () => onSelect(i),
+        );
+      },
     );
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    _terminal.dispose();
-    super.dispose();
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _terminal = Terminal(cols: 80, rows: 24);
-    _controller = TerminalController();
-
-    final buf = StringBuffer()
-      ..write('\x1b[2J\x1b[H')
-      ..write('\x1b[1m  flterm Demo\x1b[0m\r\n\r\n')
-      ..write('  Attributes: ')
-      ..write('\x1b[1mBold\x1b[0m \x1b[3mItalic\x1b[0m ')
-      ..write('\x1b[2mFaint\x1b[0m \x1b[7mInverse\x1b[0m\r\n')
-      ..write('  Underline:  ')
-      ..write('\x1b[4mSingle\x1b[0m \x1b[4:2mDouble\x1b[0m ')
-      ..write('\x1b[4:3mCurly\x1b[0m \x1b[4:4mDotted\x1b[0m ')
-      ..write('\x1b[4:5mDashed\x1b[0m\r\n')
-      ..write('  Colors:     ');
-    for (var i = 0; i < 8; i++) {
-      buf.write('\x1b[${40 + i}m  \x1b[0m');
-    }
-    buf.write(' ');
-    for (var i = 0; i < 8; i++) {
-      buf.write('\x1b[${100 + i}m  \x1b[0m');
-    }
-    buf.write('\r\n');
-
-    _terminal.write(Uint8List.fromList(utf8.encode(buf.toString())));
   }
 }
