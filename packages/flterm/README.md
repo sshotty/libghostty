@@ -1,7 +1,11 @@
-# flterm
+<p align="center">
+  <img src="screenshots/banner.png" alt="Ghostty's full VT engine, as a Flutter widget" width="100%">
+</p>
 
-[![pub package](https://img.shields.io/pub/v/flterm)](https://pub.dev/packages/flterm)
-[![GitHub Actions](https://github.com/elias8/libghostty/actions/workflows/build.yml/badge.svg)](https://github.com/elias8/libghostty/actions)
+<p align="center">
+  <a href="https://pub.dev/packages/flterm"><img alt="pub package" src="https://img.shields.io/pub/v/flterm"></a>
+  <a href="https://github.com/elias8/libghostty/actions"><img alt="ci" src="https://github.com/elias8/libghostty/actions/workflows/build.yml/badge.svg"></a>
+</p>
 
 Flutter terminal widget on top of [Ghostty](https://ghostty.org)'s
 libghostty-vt engine.

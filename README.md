@@ -1,9 +1,7 @@
-<!-- TODO(banner): replace with the dual ASCII-art header (flterm + ghostty) -->
 <p align="center">
-  <img src="docs/banner.png" alt="libghostty + flterm" width="720">
+  <img src="packages/flterm/screenshots/banner.png" alt="Ghostty's full VT engine, as a Flutter widget" width="100%">
 </p>
 
-<h1 align="center">libghostty &middot; flterm</h1>
 <p align="center">
   <a href="https://pub.dev/packages/libghostty"><img alt="libghostty" src="https://img.shields.io/pub/v/libghostty?label=libghostty"></a>
   <a href="https://pub.dev/packages/flterm"><img alt="flterm" src="https://img.shields.io/pub/v/flterm?label=flterm"></a>
