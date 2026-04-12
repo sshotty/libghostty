@@ -2031,6 +2031,7 @@ class WasmBindings implements GhosttyBindings {
     bool unwrap = false,
     bool trim = false,
     FormatterExtra extra = const FormatterExtra(),
+    RawSelection? selection,
   }) {
     final optsSize = _layout.formatterOptsSize;
     final outPtr = _exports.ghostty_wasm_alloc_opaque();
@@ -2097,6 +2098,23 @@ class WasmBindings implements GhosttyBindings {
       extra.charsets ? 1 : 0,
     );
 
+    var selPtr = 0;
+    if (selection != null) {
+      selPtr = _exports.ghostty_wasm_alloc_u8_array(_layout.selectionSize);
+      _mem.writeU32(selPtr, _layout.selectionSize);
+      final startSrc = selection.start;
+      final endSrc = selection.end;
+      final startDst = selPtr + _layout.selectionStart;
+      final endDst = selPtr + _layout.selectionEnd;
+      _mem.writeBytes(startDst, _mem.readBytes(startSrc, _layout.gridRefSize));
+      _mem.writeBytes(endDst, _mem.readBytes(endSrc, _layout.gridRefSize));
+      _mem.writeU8(
+        selPtr + _layout.selectionRectangle,
+        selection.rectangle ? 1 : 0,
+      );
+    }
+    _mem.writeU32(optsPtr + _layout.formatterOptsSelection, selPtr);
+
     final result = _exports.ghostty_formatter_terminal_new(
       0,
       outPtr,
@@ -2106,6 +2124,9 @@ class WasmBindings implements GhosttyBindings {
     final handle = _mem.readPtr(outPtr);
     _exports.ghostty_wasm_free_opaque(outPtr);
     _exports.ghostty_wasm_free_u8_array(optsPtr, optsSize);
+    if (selPtr != 0) {
+      _exports.ghostty_wasm_free_u8_array(selPtr, _layout.selectionSize);
+    }
     return (.fromValue(result), handle);
   }
 

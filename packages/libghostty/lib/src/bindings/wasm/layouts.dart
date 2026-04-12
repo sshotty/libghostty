@@ -23,6 +23,7 @@ class Layouts {
   late final int formatterOptsUnwrap;
   late final int formatterOptsTrim;
   late final int formatterOptsExtra;
+  late final int formatterOptsSelection;
 
   // GhosttyFormatterTerminalExtra
   late final int formatterTermExtraSize;
@@ -42,6 +43,12 @@ class Layouts {
   late final int formatterScreenExtraProtection;
   late final int formatterScreenExtraKittyKeyboard;
   late final int formatterScreenExtraCharsets;
+
+  // GhosttySelection
+  late final int selectionSize;
+  late final int selectionStart;
+  late final int selectionEnd;
+  late final int selectionRectangle;
 
   // GhosttyGridRef
   late final int gridRefSize;
@@ -149,6 +156,7 @@ class Layouts {
     formatterOptsUnwrap = struct['unwrap'];
     formatterOptsTrim = struct['trim'];
     formatterOptsExtra = struct['extra'];
+    formatterOptsSelection = struct['selection'];
 
     struct = _Struct(types, 'GhosttyFormatterTerminalExtra');
     formatterTermExtraSize = struct.size;
@@ -168,6 +176,12 @@ class Layouts {
     formatterScreenExtraProtection = struct['protection'];
     formatterScreenExtraKittyKeyboard = struct['kitty_keyboard'];
     formatterScreenExtraCharsets = struct['charsets'];
+
+    struct = _Struct(types, 'GhosttySelection');
+    selectionSize = struct.size;
+    selectionStart = struct['start'];
+    selectionEnd = struct['end'];
+    selectionRectangle = struct['rectangle'];
 
     struct = _Struct(types, 'GhosttyGridRef');
     gridRefSize = struct.size;

@@ -713,6 +713,35 @@ void main() {
       });
     });
 
+    group('createFormatter', () {
+      test('plain format returns screen content', () {
+        terminal.write(Uint8List.fromList('Hello'.codeUnits));
+        final formatter = terminal.createFormatter(
+          format: FormatterFormat.plain,
+          trim: true,
+        );
+        addTearDown(formatter.dispose);
+        expect(formatter.format(), contains('Hello'));
+      });
+
+      test('selection restricts output to the given range', () {
+        terminal.write(Uint8List.fromList('ABCDE\r\nFGHIJ'.codeUnits));
+        final formatter = terminal.createFormatter(
+          format: FormatterFormat.plain,
+          selection: const Selection(
+            startCol: 0,
+            startRow: 0,
+            endCol: 2,
+            endRow: 0,
+          ),
+        );
+        addTearDown(formatter.dispose);
+        final text = formatter.format();
+        expect(text, contains('ABC'));
+        expect(text, isNot(contains('FGHIJ')));
+      });
+    });
+
     group('selectCell', () {
       test('reads specific column content', () {
         terminal.write(Uint8List.fromList('ABCDE'.codeUnits));

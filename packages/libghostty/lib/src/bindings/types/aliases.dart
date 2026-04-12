@@ -29,3 +29,7 @@ typedef UnderlineStyle = SgrUnderline;
 typedef ValueGetter<T> = T Function();
 typedef ValueSetter<T> = void Function(T value);
 typedef VoidCallback = void Function();
+
+/// A selection range addressed by `GridRef` handles. `rectangle` indicates
+/// a rectangular (block) selection rather than a linear one.
+typedef RawSelection = ({int start, int end, bool rectangle});

@@ -24,7 +24,15 @@ class Formatter {
     bool unwrap = false,
     bool trim = false,
     FormatterExtra extra = const FormatterExtra(),
-  }) : _handle = _create(terminalHandle, format, unwrap, trim, extra) {
+    RawSelection? selection,
+  }) : _handle = _create(
+         terminalHandle,
+         format,
+         unwrap,
+         trim,
+         extra,
+         selection,
+       ) {
     _finalizer.attach(this, _handle, detach: this);
   }
 
@@ -54,6 +62,7 @@ class Formatter {
     bool unwrap,
     bool trim,
     FormatterExtra extra,
+    RawSelection? selection,
   ) {
     return check(
       bindings.formatterTerminalNew(
@@ -62,6 +71,7 @@ class Formatter {
         unwrap: unwrap,
         trim: trim,
         extra: extra,
+        selection: selection,
       ),
     );
   }
