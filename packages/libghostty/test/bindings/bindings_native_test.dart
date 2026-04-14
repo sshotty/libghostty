@@ -665,5 +665,25 @@ void main() {
 
       expect(withExtras.length, greaterThan(withoutExtras.length));
     });
+
+    test('formatter with selection restricts output', () {
+      final (_, t) = bindings.terminalNew(80, 24, 0);
+      bindings.terminalVtWrite(
+        t,
+        Uint8List.fromList('ABCDE\r\nFGHIJ'.codeUnits),
+      );
+      final (_, startRef) = bindings.terminalGridRef(t, PointTag.active, 0, 0);
+      final (_, endRef) = bindings.terminalGridRef(t, PointTag.active, 2, 0);
+      final (_, formatter) = bindings.formatterTerminalNew(
+        t,
+        FormatterFormat.plain,
+        selection: (start: startRef, end: endRef, rectangle: false),
+      );
+      final (_, text) = bindings.formatterFormat(formatter);
+      bindings.formatterFree(formatter);
+      bindings.terminalFree(t);
+      expect(text, contains('ABC'));
+      expect(text, isNot(contains('FGHIJ')));
+    });
   });
 }

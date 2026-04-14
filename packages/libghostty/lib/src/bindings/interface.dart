@@ -271,6 +271,7 @@ abstract interface class GhosttyBindings {
     bool unwrap = false,
     bool trim = false,
     FormatterExtra extra = const FormatterExtra(),
+    RawSelection? selection,
   });
   void formatterFree(int formatter);
   CResult<String> formatterFormat(int formatter);

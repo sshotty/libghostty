@@ -71,6 +71,7 @@ export 'src/impl/terminal/terminal.dart'
         GridRef,
         RenderState,
         Row,
+        Selection,
         Terminal;
 export 'src/impl/terminal/terminal_mode.dart' show TerminalMode;
 export 'src/listenable.dart' show Listenable;

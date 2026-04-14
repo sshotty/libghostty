@@ -1871,6 +1871,7 @@ class NativeBindings implements GhosttyBindings {
     bool unwrap = false,
     bool trim = false,
     FormatterExtra extra = const FormatterExtra(),
+    RawSelection? selection,
   }) {
     return using((arena) {
       final ptr = arena<Pointer<FormatterImpl>>();
@@ -1898,6 +1899,17 @@ class NativeBindings implements GhosttyBindings {
         ..protection = extra.protection
         ..kitty_keyboard = extra.kittyKeyboard
         ..charsets = extra.charsets;
+
+      if (selection != null) {
+        final sel = arena<Selection>();
+        sel.ref.size = sizeOf<Selection>();
+        sel.ref.start = Pointer<GridRef>.fromAddress(selection.start).ref;
+        sel.ref.end = Pointer<GridRef>.fromAddress(selection.end).ref;
+        sel.ref.rectangle = selection.rectangle;
+        opts.ref.selection = sel;
+      } else {
+        opts.ref.selection = nullptr;
+      }
 
       final result = ghostty_formatter_terminal_new(
         nullptr,

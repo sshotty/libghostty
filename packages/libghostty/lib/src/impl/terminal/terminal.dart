@@ -16,6 +16,7 @@ part 'formatter.dart';
 part 'grid_ref.dart';
 part 'render_state.dart';
 part 'row.dart';
+part 'selection.dart';
 
 @internal
 int terminalHandle(Terminal terminal) => terminal._handle;
@@ -395,7 +396,10 @@ class Terminal with Listenable {
   /// [FormatterFormat.vt] output (cursor position, modes, palette, etc.).
   /// Has no effect on plain text or HTML output.
   ///
-  /// Throws [OutOfMemoryException] if the native allocation fails.
+  /// [selection] restricts the output to the given range. When null, the
+  /// entire active screen is formatted.
+  ///
+  /// Throws [OutOfMemoryException] when the allocation fails.
   ///
   /// ```dart
   /// final fmt = terminal.createFormatter(format: FormatterFormat.plain);
@@ -407,7 +411,47 @@ class Terminal with Listenable {
     bool unwrap = false,
     bool trim = false,
     FormatterExtra extra = const FormatterExtra(),
-  }) => ._(_handle, format: format, unwrap: unwrap, trim: trim, extra: extra);
+    Selection? selection,
+  }) {
+    if (selection == null) {
+      return Formatter._(
+        _handle,
+        format: format,
+        unwrap: unwrap,
+        trim: trim,
+        extra: extra,
+      );
+    }
+    final start = GridRef._(
+      _handle,
+      col: selection.startCol,
+      row: selection.startRow,
+      pointTag: selection.pointTag,
+    );
+    final end = GridRef._(
+      _handle,
+      col: selection.endCol,
+      row: selection.endRow,
+      pointTag: selection.pointTag,
+    );
+    try {
+      return Formatter._(
+        _handle,
+        format: format,
+        unwrap: unwrap,
+        trim: trim,
+        extra: extra,
+        selection: (
+          start: start._handle,
+          end: end._handle,
+          rectangle: selection.rectangle,
+        ),
+      );
+    } finally {
+      start.dispose();
+      end.dispose();
+    }
+  }
 
   /// Releases all resources held by this terminal instance.
   ///
