@@ -4,19 +4,18 @@ part of 'terminal.dart';
 /// images and placements stored via the
 /// [Kitty graphics protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol/).
 ///
-/// Obtain via [Terminal.kittyGraphics]. The handle is borrowed from the
+/// Obtained via [KittyGraphics.of]. The handle is borrowed from the
 /// terminal and is invalidated by any mutating terminal call
-/// ([Terminal.write], [Terminal.reset], [Terminal.resize]); re-read the
-/// getter after such operations rather than retaining the previous
-/// value.
+/// ([Terminal.write], [Terminal.reset], [Terminal.resize]); re-read via
+/// [of] after such operations rather than retaining the previous value.
 ///
 /// Before any images are stored, Kitty graphics must be enabled on the
-/// terminal by setting a non-zero [Terminal.kittyImageStorageLimit].
-/// PNG payloads additionally require a decoder installed via
+/// terminal by setting a non-zero [Terminal.kittyImageStorageLimit]. PNG
+/// payloads additionally require a decoder installed via
 /// [LibGhostty.setPngDecoder].
 ///
 /// ```dart
-/// final kitty = terminal.kittyGraphics;
+/// final kitty = KittyGraphics.of(terminal);
 /// if (kitty == null) return;
 /// for (final placement in kitty.placements()) {
 ///   if (!placement.renderInfo.viewportVisible) continue;
@@ -26,11 +25,20 @@ part of 'terminal.dart';
 ///   // at grid cell (renderInfo.viewportCol, renderInfo.viewportRow).
 /// }
 /// ```
-class KittyGraphics {
+@immutable
+final class KittyGraphics {
   final int _handle;
-  final int _terminalHandle;
+  final Terminal _terminal;
 
-  KittyGraphics._(this._handle, this._terminalHandle);
+  const KittyGraphics._(this._handle, this._terminal);
+
+  /// Returns the Kitty graphics image storage for [terminal]'s active
+  /// screen, or null when Kitty graphics are disabled in the native
+  /// library build.
+  static KittyGraphics? of(Terminal terminal) {
+    final handle = bindings.kittyGraphicsGet(terminal._handle);
+    return handle == 0 ? null : KittyGraphics._(handle, terminal);
+  }
 
   /// Looks up an image by its Kitty graphics [imageId].
   ///
@@ -79,7 +87,7 @@ class KittyGraphics {
           final (code, info) = bindings.kittyGraphicsPlacementRenderInfo(
             iterator,
             imageHandle,
-            _terminalHandle,
+            _terminal._handle,
           );
           renderInfo = code == .success ? ._(info) : const ._offscreen();
         }
@@ -95,17 +103,18 @@ class KittyGraphics {
 /// Snapshot of a single Kitty graphics placement.
 ///
 /// A placement pins an image (or a region of one) to a location in the
-/// terminal grid. Fields mirror the raw placement data; use
-/// [renderInfo] for resolved pixel/grid geometry that accounts for the
-/// terminal's current viewport.
+/// terminal grid. Fields mirror the raw placement data; use [renderInfo]
+/// for resolved pixel/grid geometry that accounts for the terminal's
+/// current viewport.
 ///
-/// Snapshots are stable across subsequent terminal mutations:
-/// [renderInfo] reflects the geometry at the time the enclosing
-/// [KittyGraphics.placements] call ran. Resolve [imageId] to a live
-/// [KittyImage] via [KittyGraphics.image] when pixel bytes are needed.
-class Placement {
-  /// Image id this placement references. Pass to [KittyGraphics.image]
-  /// to resolve to a [KittyImage].
+/// Snapshots are stable across subsequent terminal mutations: [renderInfo]
+/// reflects the geometry at the time the enclosing [KittyGraphics.placements]
+/// call ran. Resolve [imageId] to a live [KittyImage] via
+/// [KittyGraphics.image] when pixel bytes are needed.
+@immutable
+final class Placement {
+  /// Image id this placement references. Pass to [KittyGraphics.image] to
+  /// resolve to a [KittyImage].
   final int imageId;
 
   /// Placement id assigned by the protocol, or zero when the placement
@@ -130,20 +139,19 @@ class Placement {
   final int sourceX;
 
   /// Requested source rectangle y origin in pixels. Zero means "use the
-  /// full image height"; see [RenderInfo.sourceY] for the resolved
-  /// value.
+  /// full image height"; see [RenderInfo.sourceY] for the resolved value.
   final int sourceY;
 
-  /// Requested source rectangle width in pixels, or zero to use the
-  /// full image width.
+  /// Requested source rectangle width in pixels, or zero to use the full
+  /// image width.
   final int sourceWidth;
 
   /// Requested source rectangle height in pixels, or zero to use the
   /// full image height.
   final int sourceHeight;
 
-  /// Requested number of grid columns the placement occupies, or zero
-  /// to derive from the image size.
+  /// Requested number of grid columns the placement occupies, or zero to
+  /// derive from the image size.
   final int columns;
 
   /// Requested number of grid rows the placement occupies, or zero to
@@ -176,19 +184,19 @@ class Placement {
 
 /// Resolved rendering geometry for a [Placement].
 ///
-/// Combines rendered pixel size, grid extent, viewport-relative
-/// position, and a resolved source rectangle (with zero-sized
-/// dimensions expanded and bounds clamped to the image) into a single
-/// snapshot.
+/// Combines rendered pixel size, grid extent, viewport-relative position,
+/// and a resolved source rectangle (with zero-sized dimensions expanded
+/// and bounds clamped to the image) into a single snapshot.
 ///
 /// When [viewportVisible] is false, the placement is either fully
 /// off-screen or virtual, and [viewportCol]/[viewportRow] may contain
 /// meaningless values. Embedders should skip painting in that case.
-/// For placements that scroll partially above the viewport,
-/// [viewportRow] (and occasionally [viewportCol]) can be negative;
-/// embedders render the full destination rectangle and rely on the
-/// canvas clip to hide the off-screen portion.
-class RenderInfo {
+/// For placements that scroll partially above the viewport, [viewportRow]
+/// (and occasionally [viewportCol]) can be negative; embedders render the
+/// full destination rectangle and rely on the canvas clip to hide the
+/// off-screen portion.
+@immutable
+final class RenderInfo {
   /// Rendered width in pixels, accounting for the source rectangle,
   /// requested [Placement.columns]/[Placement.rows], and aspect ratio.
   final int pixelWidth;
@@ -205,8 +213,8 @@ class RenderInfo {
   /// Number of grid rows the placement occupies.
   final int gridRows;
 
-  /// Viewport-relative column of the placement's top-left corner. May
-  /// be negative when the placement has scrolled partially above the
+  /// Viewport-relative column of the placement's top-left corner. May be
+  /// negative when the placement has scrolled partially above the
   /// top-left of the viewport.
   final int viewportCol;
 
@@ -215,8 +223,8 @@ class RenderInfo {
   /// viewport's top row.
   final int viewportRow;
 
-  /// Whether the placement is at least partially visible in the
-  /// viewport and is not a virtual placement.
+  /// Whether the placement is at least partially visible in the viewport
+  /// and is not a virtual placement.
   final bool viewportVisible;
 
   /// Resolved source rectangle x origin in pixels, clamped to image
@@ -271,10 +279,11 @@ class RenderInfo {
 ///
 /// [pixelData] is the exception: it copies the bytes into a Dart-owned
 /// [Uint8List], so the returned buffer remains valid after mutations.
-class KittyImage {
+@immutable
+final class KittyImage {
   final int _handle;
 
-  KittyImage._(this._handle);
+  const KittyImage._(this._handle);
 
   /// Image id assigned by the Kitty graphics protocol.
   int get id => check(bindings.kittyGraphicsImageGetId(_handle));
@@ -298,14 +307,14 @@ class KittyImage {
     return check(bindings.kittyGraphicsImageGetCompression(_handle));
   }
 
-  /// Raw pixel bytes, copied into a Dart-owned buffer so the list
-  /// remains valid after subsequent terminal mutations.
+  /// Raw pixel bytes, copied into a Dart-owned buffer so the list remains
+  /// valid after subsequent terminal mutations.
   ///
   /// The layout honors [format] and [compression]: decompressing
-  /// zlib-compressed payloads and reinterpreting non-RGB/RGBA formats
-  /// is the caller's responsibility. PNG payloads are decoded ahead of
-  /// time by the callback installed via [LibGhostty.setPngDecoder] and
-  /// are stored here as RGBA.
+  /// zlib-compressed payloads and reinterpreting non-RGB/RGBA formats is
+  /// the caller's responsibility. PNG payloads are decoded ahead of time
+  /// by the callback installed via [LibGhostty.setPngDecoder] and are
+  /// stored here as RGBA.
   Uint8List get pixelData {
     return check(bindings.kittyGraphicsImageGetPixelData(_handle));
   }

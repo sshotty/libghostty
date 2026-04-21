@@ -4,6 +4,9 @@ import 'package:libghostty/libghostty.dart';
 
 void main() {
   final terminal = Terminal(cols: 40, rows: 5);
+  final renderState = RenderState();
+  final rows = RowIterator();
+  final cells = CellIterator();
 
   terminal.write(
     Uint8List.fromList(
@@ -14,9 +17,7 @@ void main() {
     ),
   );
 
-  terminal.renderState.update();
-
-  switch (terminal.renderState.dirty) {
+  switch (renderState.update(terminal)) {
     case .clean:
       print('Frame is clean, nothing to draw.');
     case .partial:
@@ -25,28 +26,33 @@ void main() {
       print('Full redraw needed.');
   }
 
-  final colors = terminal.renderState.colors;
+  final colors = renderState.colors;
   final fg = colors.foreground;
   final bg = colors.background;
   print('Default fg: RGB(${fg.r}, ${fg.g}, ${fg.b})');
   print('Default bg: RGB(${bg.r}, ${bg.g}, ${bg.b})');
   print('Palette entries: ${colors.palette.length}');
 
-  while (terminal.renderState.nextRow()) {
-    if (!terminal.renderState.row.dirty) continue;
+  rows.reset(renderState);
+  while (rows.next()) {
+    if (!rows.dirty) continue;
 
     final buf = StringBuffer();
-    while (terminal.renderState.nextCell()) {
-      final cell = terminal.renderState.cell;
-      if (!cell.hasText) continue;
-      buf.write(cell.content);
+    cells.reset(rows);
+    while (cells.next()) {
+      if (!cells.hasText) continue;
+      buf.write(cells.content);
     }
     final text = buf.toString().trimRight();
     if (text.isNotEmpty) print('  $text');
+    rows.dirty = false;
   }
 
-  terminal.renderState.markClean();
-  print('After markClean: ${terminal.renderState.dirty}');
+  renderState.dirty = DirtyState.clean;
+  print('After clearing: ${renderState.dirty}');
 
+  cells.dispose();
+  rows.dispose();
+  renderState.dispose();
   terminal.dispose();
 }

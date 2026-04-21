@@ -25,65 +25,92 @@ class CellSnapshot {
 }
 
 CellSnapshot readCellAt(Terminal terminal, int row, int col) {
-  terminal.renderState.update();
-  var currentRow = 0;
-  while (terminal.renderState.nextRow()) {
-    if (currentRow == row) {
-      var currentCol = 0;
-      while (terminal.renderState.nextCell()) {
-        if (currentCol == col) {
-          final cell = terminal.renderState.cell;
-          return CellSnapshot(
-            content: cell.content,
-            hasText: cell.hasText,
-            wide: cell.wide,
-            style: cell.style,
-            foreground: cell.style.foreground,
-            background: cell.style.background,
-            underlineStyle: cell.style.underline,
-            hasHyperlink: cell.hasHyperlink,
-          );
-        }
-        currentCol++;
+  final rs = RenderState();
+  final rows = RowIterator();
+  final cells = CellIterator();
+  try {
+    rs.update(terminal);
+    rows.reset(rs);
+    while (rows.next()) {
+      if (rows.index != row) continue;
+      cells.reset(rows);
+      while (cells.next()) {
+        if (cells.col != col) continue;
+        return CellSnapshot(
+          content: cells.content,
+          hasText: cells.hasText,
+          wide: cells.wide,
+          style: cells.style,
+          foreground: cells.style.foreground,
+          background: cells.style.background,
+          underlineStyle: cells.style.underline,
+          hasHyperlink: cells.hasHyperlink,
+        );
       }
     }
-    currentRow++;
+    return const CellSnapshot();
+  } finally {
+    cells.dispose();
+    rows.dispose();
+    rs.dispose();
   }
-  return const CellSnapshot();
 }
 
-bool isRowDirty(Terminal terminal, int row) {
-  terminal.renderState.update();
-  var i = 0;
-  while (terminal.renderState.nextRow()) {
-    if (i == row) return terminal.renderState.row.dirty;
-    i++;
+/// Queries the dirty flag for [row] from an already-updated [renderState].
+///
+/// Takes a [RenderState] (instead of allocating a fresh one) because the
+/// first [RenderState.update] on a freshly allocated render state marks
+/// every row dirty unconditionally; using the caller's render state keeps
+/// the flag consistent with whatever per-row clearing the caller has done.
+bool isRowDirty(RenderState renderState, int row) {
+  final rows = RowIterator();
+  try {
+    rows.reset(renderState);
+    while (rows.next()) {
+      if (rows.index == row) return rows.dirty;
+    }
+    return false;
+  } finally {
+    rows.dispose();
   }
-  return false;
 }
 
 bool isRowWrapped(Terminal terminal, int row) {
-  terminal.renderState.update();
-  var i = 0;
-  while (terminal.renderState.nextRow()) {
-    if (i == row) return terminal.renderState.row.wrap;
-    i++;
+  final rs = RenderState();
+  final rows = RowIterator();
+  try {
+    rs.update(terminal);
+    rows.reset(rs);
+    while (rows.next()) {
+      if (rows.index == row) return rows.wrap;
+    }
+    return false;
+  } finally {
+    rows.dispose();
+    rs.dispose();
   }
-  return false;
 }
 
 String readRowText(Terminal terminal, int row) {
-  terminal.renderState.update();
-  var currentRow = 0;
-  while (terminal.renderState.nextRow()) {
-    if (currentRow == row) {
+  final rs = RenderState();
+  final rows = RowIterator();
+  final cells = CellIterator();
+  try {
+    rs.update(terminal);
+    rows.reset(rs);
+    while (rows.next()) {
+      if (rows.index != row) continue;
       final buffer = StringBuffer();
-      while (terminal.renderState.nextCell()) {
-        buffer.write(terminal.renderState.cell.content);
+      cells.reset(rows);
+      while (cells.next()) {
+        buffer.write(cells.content);
       }
       return buffer.toString();
     }
-    currentRow++;
+    return '';
+  } finally {
+    cells.dispose();
+    rows.dispose();
+    rs.dispose();
   }
-  return '';
 }

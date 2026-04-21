@@ -108,11 +108,5 @@ void main() {
       expect(result, isNotEmpty);
       expect(result, startsWith('\x1b'));
     });
-
-    test('double dispose is safe', () {
-      final e = KeyEncoder();
-      e.dispose();
-      e.dispose();
-    });
   });
 }

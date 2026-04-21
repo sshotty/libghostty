@@ -5,22 +5,22 @@ import 'package:meta/meta.dart';
 import '../../bindings/bindings.dart';
 import '../../ffi/libghostty_enums.g.dart';
 import '../../listenable.dart';
-import '../key/key_encoder.dart';
 import '../key/kitty_key_flags.dart';
-import '../mouse/mouse_encoder.dart';
+import '../key/mods.dart';
 import 'terminal_mode.dart';
 
-part 'cell.dart';
+part '../key/key_encoder.dart';
+part '../key/key_event.dart';
+part '../mouse/mouse_encoder.dart';
+part '../mouse/mouse_event.dart';
+part 'cell_iterator.dart';
 part 'cursor.dart';
 part 'formatter.dart';
 part 'grid_ref.dart';
 part 'kitty_graphics.dart';
 part 'render_state.dart';
-part 'row.dart';
+part 'row_iterator.dart';
 part 'selection.dart';
-
-@internal
-int terminalHandle(Terminal terminal) => terminal._handle;
 
 /// Complete terminal emulator managing screen state, scrollback, cursor,
 /// styles, modes, and VT stream processing.
@@ -29,6 +29,18 @@ int terminalHandle(Terminal terminal) => terminal._handle;
 /// directly affect terminal state. Sequences with side effects (bell, title
 /// changes, device queries) are silently ignored unless the corresponding
 /// callback is registered. See the "Effects" section below.
+///
+/// ## Companion types
+///
+/// [Terminal] is the VT state machine and effect dispatcher. Rendering,
+/// coordinate queries, encoding, and formatting are handled by independent,
+/// disposable companion types that take a [Terminal] when they need one:
+///
+/// - [RenderState] with [RowIterator] / [CellIterator] for rendering
+/// - [GridRef.at] for one-off cell lookups
+/// - [KittyGraphics.of] for Kitty graphics storage access
+/// - [Formatter] for extracting terminal content
+/// - [KeyEncoder] / [MouseEncoder] for encoding input events
 ///
 /// ## Effects
 ///
@@ -63,23 +75,13 @@ int terminalHandle(Terminal terminal) => terminal._handle;
 ///
 /// terminal.dispose();
 /// ```
-class Terminal with Listenable {
+final class Terminal with Listenable {
   static final _finalizer = Finalizer<int>((handle) {
     bindings.terminalDisposeCallbacks(handle);
     bindings.terminalFree(handle);
   });
 
   final int _handle;
-
-  /// Encodes keyboard input into terminal escape sequences.
-  late final KeyEncoder keyEncoder;
-
-  /// Rendering API with dirty tracking for efficient screen updates.
-  late final RenderState renderState;
-
-  /// Encodes mouse events into terminal escape sequences.
-  late final MouseEncoder mouseEncoder;
-  var _disposed = false;
 
   /// Creates a terminal with the given grid dimensions and scrollback limit.
   ///
@@ -92,11 +94,8 @@ class Terminal with Listenable {
   /// final terminal = Terminal(cols: 80, rows: 24, maxScrollback: 5000);
   /// ```
   Terminal({required int cols, required int rows, int maxScrollback = 10_000})
-    : _handle = _create(cols, rows, maxScrollback) {
+    : _handle = check(bindings.terminalNew(cols, rows, maxScrollback)) {
     _finalizer.attach(this, _handle, detach: this);
-    renderState = RenderState._(_handle);
-    keyEncoder = KeyEncoder()..syncFrom(this);
-    mouseEncoder = MouseEncoder()..syncFrom(this);
   }
 
   /// The active screen buffer (primary or alternate).
@@ -179,38 +178,11 @@ class Terminal with Listenable {
   /// Total terminal height in pixels (rows * cell height).
   int get heightPx => check(bindings.terminalGetHeightPx(_handle));
 
-  /// Whether any mouse tracking mode is currently active.
-  bool get isMouseTracking => check(bindings.terminalGetMouseTracking(_handle));
-
-  /// Image storage for the Kitty graphics protocol on the active
-  /// screen, or null when Kitty graphics are disabled in the native
-  /// library build.
-  ///
-  /// The returned [KittyGraphics] handle is borrowed from the terminal
-  /// and is invalidated by any mutating terminal call ([write],
-  /// [reset], [resize]); re-read this getter after such operations
-  /// rather than retaining the previous value.
-  ///
-  /// Image storage must be enabled before any images are kept: set a
-  /// non-zero [kittyImageStorageLimit]. PNG payloads additionally
-  /// require a decoder installed via [LibGhostty.setPngDecoder].
-  KittyGraphics? get kittyGraphics {
-    final handle = bindings.kittyGraphicsGet(_handle);
-    return handle == 0 ? null : KittyGraphics._(handle, _handle);
-  }
-
   /// Whether the file medium is enabled for Kitty image loading.
   /// Returns null when Kitty graphics are not compiled in.
   bool? get isKittyFileMedium {
     final (code, value) = bindings.terminalGetKittyImageMediumFile(_handle);
     return code == .noValue ? null : check((code, value));
-  }
-
-  /// Enables or disables the file medium for Kitty image loading.
-  void setKittyFileMedium({required bool enabled}) {
-    checkCode(
-      bindings.terminalSetKittyImageMediumFile(_handle, enabled: enabled),
-    );
   }
 
   /// Whether the shared memory medium is enabled for Kitty image loading.
@@ -222,13 +194,6 @@ class Terminal with Listenable {
     return code == .noValue ? null : check((code, value));
   }
 
-  /// Enables or disables the shared memory medium for Kitty image loading.
-  void setKittySharedMemMedium({required bool enabled}) {
-    checkCode(
-      bindings.terminalSetKittyImageMediumSharedMem(_handle, enabled: enabled),
-    );
-  }
-
   /// Whether the temporary file medium is enabled for Kitty image loading.
   /// Returns null when Kitty graphics are not compiled in.
   bool? get isKittyTempFileMedium {
@@ -236,12 +201,8 @@ class Terminal with Listenable {
     return code == .noValue ? null : check((code, value));
   }
 
-  /// Enables or disables the temporary file medium for Kitty image loading.
-  void setKittyTempFileMedium({required bool enabled}) {
-    checkCode(
-      bindings.terminalSetKittyImageMediumTempFile(_handle, enabled: enabled),
-    );
-  }
+  /// Whether any mouse tracking mode is currently active.
+  bool get isMouseTracking => check(bindings.terminalGetMouseTracking(_handle));
 
   /// Kitty image storage limit in bytes for the active screen.
   ///
@@ -407,107 +368,16 @@ class Terminal with Listenable {
   /// Total terminal width in pixels (cols * cell width).
   int get widthPx => check(bindings.terminalGetWidthPx(_handle));
 
-  /// Creates a [Formatter] for extracting terminal content as plain text,
-  /// VT sequences, or HTML.
+  /// Releases the native terminal handle and clears registered callbacks.
   ///
-  /// [extra] controls which additional terminal state is included in
-  /// [FormatterFormat.vt] output (cursor position, modes, palette, etc.).
-  /// Has no effect on plain text or HTML output.
-  ///
-  /// [selection] restricts the output to the given range. When null, the
-  /// entire active screen is formatted.
-  ///
-  /// Throws [OutOfMemoryException] when the allocation fails.
-  ///
-  /// ```dart
-  /// final fmt = terminal.createFormatter(format: FormatterFormat.plain);
-  /// final text = fmt.format();
-  /// fmt.dispose();
-  /// ```
-  Formatter createFormatter({
-    required FormatterFormat format,
-    bool unwrap = false,
-    bool trim = false,
-    FormatterExtra extra = const FormatterExtra(),
-    Selection? selection,
-  }) {
-    if (selection == null) {
-      return Formatter._(
-        _handle,
-        format: format,
-        unwrap: unwrap,
-        trim: trim,
-        extra: extra,
-      );
-    }
-    final start = GridRef._(
-      _handle,
-      col: selection.startCol,
-      row: selection.startRow,
-      pointTag: selection.pointTag,
-    );
-    final end = GridRef._(
-      _handle,
-      col: selection.endCol,
-      row: selection.endRow,
-      pointTag: selection.pointTag,
-    );
-    try {
-      return Formatter._(
-        _handle,
-        format: format,
-        unwrap: unwrap,
-        trim: trim,
-        extra: extra,
-        selection: (
-          start: start._handle,
-          end: end._handle,
-          rectangle: selection.rectangle,
-        ),
-      );
-    } finally {
-      start.dispose();
-      end.dispose();
-    }
-  }
-
-  /// Releases all resources held by this terminal instance.
-  ///
-  /// Disposes the [keyEncoder], [renderState], and [mouseEncoder], clears all
-  /// registered callbacks, and frees the native terminal handle. Safe to call
-  /// multiple times; subsequent calls are no-ops.
+  /// Must be called to free resources; the terminal must not be used
+  /// afterward.
   void dispose() {
-    if (_disposed) return;
-    _disposed = true;
-    keyEncoder.dispose();
-    renderState.dispose();
-    mouseEncoder.dispose();
     clearListeners();
     bindings.terminalDisposeCallbacks(_handle);
     _finalizer.detach(this);
     bindings.terminalFree(_handle);
   }
-
-  /// Resolves a point in terminal coordinates to a [GridRef] for a single cell.
-  ///
-  /// [pointTag] selects the coordinate space: [PointTag.active] and
-  /// [PointTag.viewport] are fast lookups; [PointTag.screen] and
-  /// [PointTag.history] may require traversing the full scrollback page list.
-  ///
-  /// Not intended for render loops; use [renderState] for bulk cell access.
-  ///
-  /// Throws [InvalidValueException] if the coordinates are out of range.
-  ///
-  /// ```dart
-  /// final ref = terminal.gridRefAt(col: 0, row: 0);
-  /// final codepoint = ref.codepoint;
-  /// ref.dispose();
-  /// ```
-  GridRef gridRefAt({
-    required int col,
-    required int row,
-    PointTag pointTag = .active,
-  }) => GridRef._(_handle, col: col, row: row, pointTag: pointTag);
 
   /// Queries whether the given terminal [mode] is currently enabled.
   bool modeGet(TerminalMode mode) {
@@ -562,6 +432,27 @@ class Terminal with Listenable {
     bindings.terminalScrollViewport(_handle, .delta, delta);
   }
 
+  /// Enables or disables the file medium for Kitty image loading.
+  void setKittyFileMedium({required bool enabled}) {
+    checkCode(
+      bindings.terminalSetKittyImageMediumFile(_handle, enabled: enabled),
+    );
+  }
+
+  /// Enables or disables the shared memory medium for Kitty image loading.
+  void setKittySharedMemMedium({required bool enabled}) {
+    checkCode(
+      bindings.terminalSetKittyImageMediumSharedMem(_handle, enabled: enabled),
+    );
+  }
+
+  /// Enables or disables the temporary file medium for Kitty image loading.
+  void setKittyTempFileMedium({required bool enabled}) {
+    checkCode(
+      bindings.terminalSetKittyImageMediumTempFile(_handle, enabled: enabled),
+    );
+  }
+
   /// Feeds raw VT-encoded bytes into the terminal for processing.
   ///
   /// Never fails: malformed input is logged internally but does not corrupt
@@ -579,10 +470,6 @@ class Terminal with Listenable {
   void write(Uint8List data) {
     bindings.terminalVtWrite(_handle, data);
     notifyListeners();
-  }
-
-  static int _create(int cols, int rows, int maxScrollback) {
-    return check(bindings.terminalNew(cols, rows, maxScrollback));
   }
 
   static RgbColor? _optionalColor(CResult<RgbColor> result) {

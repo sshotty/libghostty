@@ -2,47 +2,49 @@ part of 'terminal.dart';
 
 /// Formats terminal content as plain text, VT sequences, or HTML.
 ///
-/// Captures a borrowed reference to a [Terminal] and reads its current state
-/// on each [format] call. The [Terminal] must outlive this formatter.
-///
-/// Create via [Terminal.createFormatter].
+/// Captures a reference to a [Terminal] and reads its current state on each
+/// [format] call. The [Terminal] must outlive this formatter.
 ///
 /// ```dart
-/// final formatter = terminal.createFormatter(format: .plain);
+/// final formatter = Formatter(
+///   terminal: terminal,
+///   format: FormatterFormat.plain,
+/// );
 /// final text = formatter.format();
 /// formatter.dispose();
 /// ```
-class Formatter {
+@immutable
+final class Formatter {
   static final _finalizer = Finalizer<int>(bindings.formatterFree);
 
   final int _handle;
-  var _disposed = false;
 
-  Formatter._(
-    int terminalHandle, {
+  /// Creates a formatter for [terminal].
+  ///
+  /// [format] selects the output syntax (plain, vt, or html). [extra]
+  /// controls which additional terminal state is included in
+  /// [FormatterFormat.vt] output (cursor position, modes, palette, etc.);
+  /// it has no effect on plain text or HTML output. [selection] restricts
+  /// the output to the given range; when null, the entire active screen
+  /// is formatted.
+  ///
+  /// Throws [OutOfMemoryException] when the allocation fails.
+  Formatter({
+    required Terminal terminal,
     required FormatterFormat format,
     bool unwrap = false,
     bool trim = false,
     FormatterExtra extra = const FormatterExtra(),
-    RawSelection? selection,
-  }) : _handle = _create(
-         terminalHandle,
-         format,
-         unwrap,
-         trim,
-         extra,
-         selection,
-       ) {
+    Selection? selection,
+  }) : _handle = _create(terminal, format, unwrap, trim, extra, selection) {
     _finalizer.attach(this, _handle, detach: this);
   }
 
-  /// Releases all resources associated with this formatter.
+  /// Releases the native formatter handle.
   ///
-  /// The formatter must not be used after this call. Safe to call multiple
-  /// times; subsequent calls are no-ops.
+  /// Must be called to free resources; the formatter must not be used
+  /// afterward.
   void dispose() {
-    if (_disposed) return;
-    _disposed = true;
     _finalizer.detach(this);
     bindings.formatterFree(_handle);
   }
@@ -57,22 +59,55 @@ class Formatter {
   String format() => check(bindings.formatterFormat(_handle));
 
   static int _create(
-    int terminalHandle,
+    Terminal terminal,
     FormatterFormat format,
     bool unwrap,
     bool trim,
     FormatterExtra extra,
-    RawSelection? selection,
+    Selection? selection,
   ) {
-    return check(
-      bindings.formatterTerminalNew(
-        terminalHandle,
-        format,
-        unwrap: unwrap,
-        trim: trim,
-        extra: extra,
-        selection: selection,
-      ),
+    if (selection == null) {
+      return check(
+        bindings.formatterTerminalNew(
+          terminal._handle,
+          format,
+          unwrap: unwrap,
+          trim: trim,
+          extra: extra,
+        ),
+      );
+    }
+
+    final start = GridRef._(
+      terminal,
+      col: selection.startCol,
+      row: selection.startRow,
+      pointTag: selection.pointTag,
     );
+    final end = GridRef._(
+      terminal,
+      col: selection.endCol,
+      row: selection.endRow,
+      pointTag: selection.pointTag,
+    );
+    try {
+      return check(
+        bindings.formatterTerminalNew(
+          terminal._handle,
+          format,
+          unwrap: unwrap,
+          trim: trim,
+          extra: extra,
+          selection: (
+            start: start._handle,
+            end: end._handle,
+            rectangle: selection.rectangle,
+          ),
+        ),
+      );
+    } finally {
+      start.dispose();
+      end.dispose();
+    }
   }
 }

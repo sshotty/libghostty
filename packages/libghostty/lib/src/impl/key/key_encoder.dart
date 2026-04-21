@@ -1,37 +1,25 @@
-import 'package:meta/meta.dart';
-
-import '../../bindings/bindings.dart';
-import '../../ffi/libghostty_enums.g.dart';
-import '../terminal/terminal.dart';
-import 'key_event.dart';
-import 'kitty_key_flags.dart';
-
-@internal
-int keyEncoderHandle(KeyEncoder encoder) => encoder._handle;
+part of '../terminal/terminal.dart';
 
 /// Encodes key events into terminal escape sequences, supporting both legacy
 /// encoding and the Kitty keyboard protocol.
 ///
 /// The encoder is stateful: configure it with terminal modes and protocol flags
 /// before encoding. Options can be set individually ([setCursorKeyApplication],
-/// [setKittyFlags], etc.) or synced in bulk from a [Terminal] via [syncFrom].
+/// [setKittyFlags], etc.) or synced in bulk from a [Terminal] via [sync].
 ///
-/// When used with a [Terminal], call [syncFrom] after each [Terminal.write] to
-/// keep the encoder in sync with mode changes the program may have made (e.g.
-/// enabling Kitty keyboard protocol or cursor key application mode).
+/// When used with a [Terminal], call [sync] immediately before each
+/// [encode] so the produced sequence matches the terminal's current
+/// mode state.
 ///
 /// ```dart
 /// final terminal = Terminal(cols: 80, rows: 24);
-/// terminal.write(vtData); // May enable Kitty protocol, etc.
-///
 /// final encoder = KeyEncoder();
-/// encoder.syncFrom(terminal);
-///
 /// final event = KeyEvent()
 ///   ..action = KeyAction.press
 ///   ..key = Key.c
 ///   ..mods = Mods.ctrl();
 ///
+/// encoder.sync(terminal);
 /// final seq = encoder.encode(event);
 /// if (seq.isNotEmpty) pty.write(utf8.encode(seq));
 ///
@@ -39,29 +27,27 @@ int keyEncoderHandle(KeyEncoder encoder) => encoder._handle;
 /// encoder.dispose();
 /// terminal.dispose();
 /// ```
-class KeyEncoder {
+@immutable
+final class KeyEncoder {
   static final _finalizer = Finalizer<int>(bindings.keyEncoderFree);
 
   final int _handle;
-  var _disposed = false;
 
   /// Creates a new key encoder with default options.
   ///
   /// All modes start disabled (legacy encoding). Configure with the setter
-  /// methods or [syncFrom] before calling [encode].
+  /// methods or [sync] before calling [encode].
   ///
   /// Throws [OutOfMemoryException] if the native allocation fails.
-  KeyEncoder() : _handle = _create() {
+  KeyEncoder() : _handle = check(bindings.keyEncoderNew()) {
     _finalizer.attach(this, _handle, detach: this);
   }
 
-  /// Releases all resources associated with this encoder.
+  /// Releases the native encoder handle.
   ///
-  /// The encoder must not be used after this call. Safe to call multiple
-  /// times; subsequent calls are no-ops.
+  /// Must be called to free resources; the encoder must not be used
+  /// afterward.
   void dispose() {
-    if (_disposed) return;
-    _disposed = true;
     _finalizer.detach(this);
     bindings.keyEncoderFree(_handle);
   }
@@ -84,7 +70,7 @@ class KeyEncoder {
   /// if (seq.isNotEmpty) pty.write(utf8.encode(seq));
   /// ```
   String encode(KeyEvent event) {
-    return check(bindings.keyEncoderEncode(_handle, keyEventHandle(event)));
+    return check(bindings.keyEncoderEncode(_handle, event._handle));
   }
 
   /// Sets DEC mode 1036: whether Alt sends an ESC prefix before the key
@@ -135,29 +121,30 @@ class KeyEncoder {
   ///
   /// Controls whether the macOS Option key is treated as Alt for encoding
   /// purposes. This option cannot be determined from terminal state, so
-  /// [syncFrom] resets it to [OptionAsAlt.false$]. Call this method afterward
+  /// [sync] resets it to [OptionAsAlt.false$]. Call this method afterward
   /// if needed.
   void setOptionAsAlt(OptionAsAlt option) {
     bindings.keyEncoderSetOptionAsAlt(_handle, option);
   }
 
-  /// Syncs all encoder options from the [terminal]'s current mode state.
+  /// Syncs all encoder options from [terminal]'s current mode state.
   ///
   /// Reads the terminal's current modes and applies them to the encoder:
   /// cursor key application mode (DEC 1), keypad mode (DEC 66), alt escape
   /// prefix (DEC 1036), modifyOtherKeys state, and Kitty keyboard protocol
   /// flags.
   ///
+  /// Call immediately before each [encode] so the produced sequence
+  /// matches the terminal's current mode state.
+  ///
   /// The macOS option-as-alt option cannot be determined from terminal state
   /// and is reset to [OptionAsAlt.false$] by this call. Use [setOptionAsAlt]
   /// afterward if needed.
-  void syncFrom(Terminal terminal) {
-    bindings.keyEncoderSetOptFromTerminal(_handle, terminalHandle(terminal));
+  void sync(Terminal terminal) {
+    bindings.keyEncoderSetOptFromTerminal(_handle, terminal._handle);
   }
 
   void _setOptBool(KeyEncoderOption option, bool enabled) {
     bindings.keyEncoderSetBoolOpt(_handle, option, value: enabled);
   }
-
-  static int _create() => check(bindings.keyEncoderNew());
 }

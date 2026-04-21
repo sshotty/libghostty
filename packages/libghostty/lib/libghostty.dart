@@ -58,29 +58,29 @@ export 'src/ffi/libghostty_enums.g.dart'
         TerminalScreen;
 export 'src/impl/build_info.dart' show LibGhosttyBuildInfo;
 export 'src/impl/encode.dart' show FocusEventEncode, SizeReportStyleEncode;
-export 'src/impl/key/key_encoder.dart' show KeyEncoder;
-export 'src/impl/key/key_event.dart' show KeyEvent;
 export 'src/impl/key/kitty_key_flags.dart' show KittyKeyFlags;
 export 'src/impl/key/mods.dart' show Mods;
-export 'src/impl/mouse/mouse_encoder.dart' show MouseEncoder;
-export 'src/impl/mouse/mouse_event.dart' show MouseEvent;
 export 'src/impl/osc_parser.dart' show OscCommand, OscParser;
 export 'src/impl/paste.dart' show pasteEncode, pasteIsSafe;
 export 'src/impl/sgr_parser.dart' show SgrParser;
 export 'src/impl/sys.dart' show LibGhostty, LogCallback;
 export 'src/impl/terminal/terminal.dart'
     show
-        Cell,
+        CellIterator,
         Cursor,
         DirtyState,
         Formatter,
         GridRef,
+        KeyEncoder,
+        KeyEvent,
         KittyGraphics,
         KittyImage,
+        MouseEncoder,
+        MouseEvent,
         Placement,
         RenderInfo,
         RenderState,
-        Row,
+        RowIterator,
         Selection,
         Terminal;
 export 'src/impl/terminal/terminal_mode.dart' show TerminalMode;

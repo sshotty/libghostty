@@ -2,7 +2,7 @@ part of 'terminal.dart';
 
 /// An immutable snapshot of the terminal cursor state.
 @immutable
-class Cursor {
+final class Cursor {
   /// The row position within the viewport.
   final int row;
 

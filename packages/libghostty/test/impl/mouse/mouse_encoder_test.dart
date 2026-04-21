@@ -55,7 +55,7 @@ void main() {
 
       terminal.write(.fromList('\x1b[?1000h\x1b[?1006h'.codeUnits));
 
-      encoder.syncFrom(terminal);
+      encoder.sync(terminal);
       encoder.setSize(
         const MouseEncoderSize(
           screenWidth: 640,
@@ -103,14 +103,6 @@ void main() {
       encoder.setTrackLastCell(enabled: true);
       encoder.setTrackLastCell(enabled: false);
       encoder.reset();
-    });
-
-    test('double dispose is safe', () {
-      event.dispose();
-      encoder.dispose();
-      encoder.dispose();
-      encoder = MouseEncoder();
-      event = MouseEvent();
     });
   });
 }

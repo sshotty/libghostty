@@ -20,7 +20,10 @@ void main() {
 
     test('plain text format returns terminal content', () {
       terminal.write(Uint8List.fromList('Hello World'.codeUnits));
-      final formatter = terminal.createFormatter(format: FormatterFormat.plain);
+      final formatter = Formatter(
+        terminal: terminal,
+        format: FormatterFormat.plain,
+      );
       addTearDown(formatter.dispose);
 
       final result = formatter.format();
@@ -29,7 +32,10 @@ void main() {
 
     test('vt format preserves escape sequences', () {
       terminal.write(Uint8List.fromList('\x1b[1mBold\x1b[0m'.codeUnits));
-      final formatter = terminal.createFormatter(format: FormatterFormat.vt);
+      final formatter = Formatter(
+        terminal: terminal,
+        format: FormatterFormat.vt,
+      );
       addTearDown(formatter.dispose);
 
       final result = formatter.format();
@@ -39,7 +45,8 @@ void main() {
 
     test('trim strips trailing whitespace', () {
       terminal.write(Uint8List.fromList('Hi'.codeUnits));
-      final trimmed = terminal.createFormatter(
+      final trimmed = Formatter(
+        terminal: terminal,
         format: FormatterFormat.plain,
         trim: true,
       );
@@ -51,7 +58,8 @@ void main() {
 
     test('vt format with cursor extra includes CUP sequence', () {
       terminal.write(Uint8List.fromList('Hi'.codeUnits));
-      final formatter = terminal.createFormatter(
+      final formatter = Formatter(
+        terminal: terminal,
         format: FormatterFormat.vt,
         extra: const FormatterExtra(cursor: true),
       );
@@ -64,10 +72,12 @@ void main() {
 
     test('vt format with all extras produces more output', () {
       terminal.write(Uint8List.fromList('Hi'.codeUnits));
-      final withoutExtras = terminal.createFormatter(
+      final withoutExtras = Formatter(
+        terminal: terminal,
         format: FormatterFormat.vt,
       );
-      final withExtras = terminal.createFormatter(
+      final withExtras = Formatter(
+        terminal: terminal,
         format: FormatterFormat.vt,
         extra: const FormatterExtra.all(),
       );
@@ -77,12 +87,6 @@ void main() {
       final basic = withoutExtras.format();
       final full = withExtras.format();
       expect(full.length, greaterThan(basic.length));
-    });
-
-    test('double dispose is safe', () {
-      final formatter = terminal.createFormatter(format: FormatterFormat.plain);
-      formatter.dispose();
-      formatter.dispose();
     });
   });
 }

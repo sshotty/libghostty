@@ -53,11 +53,5 @@ void main() {
       expect(x, closeTo(10.5, 0.01));
       expect(y, closeTo(20.5, 0.01));
     });
-
-    test('double dispose is safe', () {
-      final e = MouseEvent();
-      e.dispose();
-      e.dispose();
-    });
   });
 }

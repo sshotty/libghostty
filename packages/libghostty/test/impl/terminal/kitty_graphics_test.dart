@@ -25,17 +25,17 @@ void main() {
     });
 
     test('returns a handle when kitty graphics are enabled at build time', () {
-      expect(terminal.kittyGraphics, isNotNull);
+      expect(KittyGraphics.of(terminal), isNotNull);
     });
 
     test('image() returns null for an unknown id', () {
-      expect(terminal.kittyGraphics?.image(99999), isNull);
+      expect(KittyGraphics.of(terminal)?.image(99999), isNull);
     });
 
     test('image() exposes metadata after a transmit APC', () {
       terminal.write(_transmitRedPixel());
 
-      final image = terminal.kittyGraphics?.image(42);
+      final image = KittyGraphics.of(terminal)?.image(42);
       expect(image, isNotNull);
       expect(image!.id, 42);
       expect(image.width, 1);
@@ -46,7 +46,7 @@ void main() {
     test('image().pixelData returns the decoded RGB bytes', () {
       terminal.write(_transmitRedPixel(id: 7));
 
-      final image = terminal.kittyGraphics!.image(7)!;
+      final image = KittyGraphics.of(terminal)!.image(7)!;
       expect(image.pixelData, equals(Uint8List.fromList([0xff, 0x00, 0x00])));
     });
   });
@@ -88,7 +88,7 @@ void main() {
       );
 
       expect(pngBytesSeen, hasLength(1));
-      final image = terminal.kittyGraphics!.image(55);
+      final image = KittyGraphics.of(terminal)!.image(55);
       expect(image, isNotNull);
       expect(image!.width, 2);
       expect(image.height, 1);
@@ -103,7 +103,7 @@ void main() {
         Uint8List.fromList('\x1b_Gf=100,a=t,i=56;aGVsbG8=\x1b\\'.codeUnits),
       );
 
-      expect(terminal.kittyGraphics!.image(56), isNull);
+      expect(KittyGraphics.of(terminal)!.image(56), isNull);
     });
 
     test('clearPngDecoder stops routing to the Dart callback', () {
@@ -118,7 +118,7 @@ void main() {
         Uint8List.fromList('\x1b_Gf=100,a=t,i=57;aGVsbG8=\x1b\\'.codeUnits),
       );
       expect(called, 0);
-      expect(terminal.kittyGraphics!.image(57), isNull);
+      expect(KittyGraphics.of(terminal)!.image(57), isNull);
     });
   });
 
@@ -131,7 +131,7 @@ void main() {
     });
 
     test('returns an empty list when no placements exist', () {
-      expect(terminal.kittyGraphics?.placements(), isEmpty);
+      expect(KittyGraphics.of(terminal)?.placements(), isEmpty);
     });
 
     test('captures a placement emitted via transmit+display', () {
@@ -143,7 +143,7 @@ void main() {
         ),
       );
 
-      final placements = terminal.kittyGraphics!.placements();
+      final placements = KittyGraphics.of(terminal)!.placements();
       expect(placements, hasLength(1));
       final p = placements.single;
       expect(p.imageId, 11);

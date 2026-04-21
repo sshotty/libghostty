@@ -2,10 +2,11 @@ part of 'terminal.dart';
 
 /// A range of terminal content between two cell positions.
 ///
-/// Endpoints are resolved against the terminal's current page state at
-/// [Terminal.createFormatter]. Subsequent mutating operations on the
+/// Endpoints are resolved against the terminal's current page state when
+/// a [Formatter] is constructed. Subsequent mutating operations on the
 /// terminal (write, reset, resize) may invalidate those endpoints;
-/// create a fresh formatter with a new [Selection] after such operations.
+/// construct a fresh [Formatter] with a new [Selection] after such
+/// operations.
 ///
 /// [pointTag] selects the coordinate space the row/column values refer
 /// to. Use [PointTag.active] for the active screen (default),
@@ -18,13 +19,14 @@ part of 'terminal.dart';
 ///   startCol: 0, startRow: 0,
 ///   endCol: 10, endRow: 0,
 /// );
-/// final formatter = terminal.createFormatter(
+/// final formatter = Formatter(
+///   terminal: terminal,
 ///   format: FormatterFormat.plain,
 ///   selection: selection,
 /// );
 /// ```
 @immutable
-class Selection {
+final class Selection {
   /// Zero-based column of the selection start (inclusive).
   final int startCol;
 

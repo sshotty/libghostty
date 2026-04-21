@@ -49,20 +49,29 @@ void main() {
   terminal.resize(cols: 120, rows: 40, cellWidthPx: 8, cellHeightPx: 16);
 
   // Read a single cell via grid reference (for ad-hoc lookups).
-  final ref = terminal.gridRefAt(col: 0, row: 0);
+  final ref = GridRef.at(terminal, col: 0, row: 0);
   print(ref.content); // the character at (0, 0)
   ref.dispose();
 
-  // Read screen via render state (for render loops).
-  terminal.renderState.update();
-  while (terminal.renderState.nextRow()) {
-    while (terminal.renderState.nextCell()) {
-      final cell = terminal.renderState.cell;
-      if (cell.hasText) print(cell.content);
-    }
-  }
-  terminal.renderState.markClean();
+  // Read screen via render state and reusable iterators.
+  final renderState = RenderState();
+  final rows = RowIterator();
+  final cells = CellIterator();
 
+  renderState.update(terminal);
+  rows.reset(renderState);
+  while (rows.next()) {
+    cells.reset(rows);
+    while (cells.next()) {
+      if (cells.hasText) print(cells.content);
+    }
+    rows.dirty = false;
+  }
+  renderState.dirty = DirtyState.clean;
+
+  cells.dispose();
+  rows.dispose();
+  renderState.dispose();
   terminal.dispose();
 }
 ```
@@ -73,14 +82,18 @@ Encode key events into terminal escape sequences, supporting legacy and Kitty
 keyboard protocol.
 
 ```dart
+final encoder = KeyEncoder();
 final event = KeyEvent()
   ..mods = const .ctrl()
   ..action = .press
   ..key = .c;
 
-final encoded = terminal.keyEncoder.encode(event);
+encoder.sync(terminal); // pick up mode changes before encoding
+final encoded = encoder.encode(event);
 if (encoded.isNotEmpty) pty.write(utf8.encode(encoded));
+
 event.dispose();
+encoder.dispose();
 ```
 
 ### Mouse encoding
@@ -89,23 +102,25 @@ Encode mouse events into escape sequences, supporting X10, UTF-8, SGR, URxvt,
 and SGR-Pixels protocols.
 
 ```dart
-// Sync tracking mode from terminal after each write.
-terminal.mouseEncoder.syncFrom(terminal);
-terminal.mouseEncoder.setSize(const MouseEncoderSize(
-  screenWidth: 640,
-  screenHeight: 384,
-  cellWidth: 8,
-  cellHeight: 16,
-));
+final encoder = MouseEncoder()
+  ..setSize(const MouseEncoderSize(
+    screenWidth: 640,
+    screenHeight: 384,
+    cellWidth: 8,
+    cellHeight: 16,
+  ));
 
 final event = MouseEvent()
   ..action = .press
-  ..button = .left;
-event.setPosition(x: 10.0, y: 5.0);
+  ..button = .left
+  ..setPosition(x: 10.0, y: 5.0);
 
-final encoded = terminal.mouseEncoder.encode(event);
+encoder.sync(terminal); // pick up tracking-mode changes before encoding
+final encoded = encoder.encode(event);
 if (encoded.isNotEmpty) pty.write(utf8.encode(encoded));
+
 event.dispose();
+encoder.dispose();
 ```
 
 ### Formatting
@@ -113,7 +128,7 @@ event.dispose();
 Format terminal content as plain text, VT sequences, or HTML.
 
 ```dart
-final formatter = terminal.createFormatter(format: .plain);
+final formatter = Formatter(terminal: terminal, format: .plain);
 print(formatter.format());
 formatter.dispose();
 ```

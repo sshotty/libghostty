@@ -13,8 +13,10 @@ void main() {
     tearDown(() => terminal.dispose());
 
     test('render state returns valid foreground, background, and palette', () {
-      terminal.renderState.update();
-      final colors = terminal.renderState.colors;
+      final renderState = RenderState();
+      addTearDown(renderState.dispose);
+      renderState.update(terminal);
+      final colors = renderState.colors;
       expect(colors.foreground, isA<RgbColor>());
       expect(colors.background, isA<RgbColor>());
       expect(colors.palette, hasLength(256));
