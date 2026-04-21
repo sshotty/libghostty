@@ -20,7 +20,6 @@ void main() {
 
     setUp(() {
       controller = TerminalControllerImpl();
-      controller.terminal.renderState.update();
       binding = controller as TerminalViewBinding;
     });
 
@@ -111,7 +110,6 @@ void main() {
           config: const TerminalConfig(cols: 20, rows: 5),
         );
         addTearDown(custom.dispose);
-        custom.terminal.renderState.update();
         final customBinding = custom as TerminalViewBinding;
 
         custom.terminal.write(
@@ -121,7 +119,6 @@ void main() {
             ...utf8.encode('CD'),
           ]),
         );
-        custom.terminal.renderState.update();
 
         customBinding.updateSelection(0, 3, 0, 5, .normal);
 
@@ -187,7 +184,6 @@ void main() {
           config: const TerminalConfig(cols: 20, rows: 3),
         );
         addTearDown(custom.dispose);
-        custom.terminal.renderState.update();
         final sc = ScrollController();
         addTearDown(sc.dispose);
         final customBinding = custom as TerminalViewBinding;
@@ -222,7 +218,6 @@ void main() {
           config: const TerminalConfig(cols: 20, rows: 3),
         );
         addTearDown(custom.dispose);
-        custom.terminal.renderState.update();
 
         for (var i = 0; i < 10; i++) {
           custom.terminal.writeUtf8('line $i\r\n');
@@ -313,7 +308,6 @@ void main() {
           config: const TerminalConfig(cols: 20, rows: 3),
         );
         addTearDown(custom.dispose);
-        custom.terminal.renderState.update();
 
         for (var i = 0; i < 10; i++) {
           custom.terminal.writeUtf8('line $i\r\n');

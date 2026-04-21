@@ -16,7 +16,6 @@ void main() {
 
     setUp(() {
       controller = TerminalControllerImpl();
-      controller.terminal.renderState.update();
     });
 
     tearDown(() => controller.dispose());
