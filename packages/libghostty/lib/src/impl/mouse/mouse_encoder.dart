@@ -1,39 +1,31 @@
-import 'package:meta/meta.dart';
-
-import '../../bindings/bindings.dart';
-import '../terminal/terminal.dart';
-import 'mouse_event.dart';
-
-@internal
-int mouseEncoderHandle(MouseEncoder encoder) => encoder._handle;
+part of '../terminal/terminal.dart';
 
 /// Encodes mouse events into terminal escape sequences, supporting X10,
 /// UTF-8, SGR, URxvt, and SGR-Pixels mouse protocols.
 ///
 /// The encoder is stateful: configure it with the tracking mode, output
 /// format, and renderer size before encoding. Options can be set individually
-/// or synced from a [Terminal] via [syncFrom].
+/// or synced from a [Terminal] via [sync].
 ///
-/// When used with a [Terminal], call [syncFrom] after each [Terminal.write]
-/// to keep the encoder in sync with tracking mode changes the program may
-/// have made.
+/// When used with a [Terminal], call [sync] immediately before each
+/// [encode] so the produced sequence matches the terminal's current
+/// tracking mode and output format. Call [setSize] once up front and again
+/// whenever the grid or cell dimensions change; [sync] does not touch it.
 ///
 /// ```dart
 /// final terminal = Terminal(cols: 80, rows: 24);
-/// terminal.write(vtData); // May enable mouse tracking
-///
-/// final encoder = MouseEncoder();
-/// encoder.syncFrom(terminal);
-/// encoder.setSize(const MouseEncoderSize(
-///   screenWidth: 640, screenHeight: 480,
-///   cellWidth: 8, cellHeight: 16,
-/// ));
+/// final encoder = MouseEncoder()
+///   ..setSize(const MouseEncoderSize(
+///     screenWidth: 640, screenHeight: 480,
+///     cellWidth: 8, cellHeight: 16,
+///   ));
 ///
 /// final event = MouseEvent()
 ///   ..action = MouseAction.press
 ///   ..button = MouseButton.left
 ///   ..setPosition(x: 10.0, y: 20.0);
 ///
+/// encoder.sync(terminal);
 /// final seq = encoder.encode(event);
 /// if (seq.isNotEmpty) pty.write(utf8.encode(seq));
 ///
@@ -41,29 +33,27 @@ int mouseEncoderHandle(MouseEncoder encoder) => encoder._handle;
 /// encoder.dispose();
 /// terminal.dispose();
 /// ```
-class MouseEncoder {
+@immutable
+final class MouseEncoder {
   static final _finalizer = Finalizer<int>(bindings.mouseEncoderFree);
 
   final int _handle;
-  var _disposed = false;
 
   /// Creates a new mouse encoder with default options.
   ///
-  /// All modes start disabled (no mouse tracking). Configure with [syncFrom]
+  /// All modes start disabled (no mouse tracking). Configure with [sync]
   /// or the typed setter methods, and call [setSize] before encoding.
   ///
   /// Throws [OutOfMemoryException] if the native allocation fails.
-  MouseEncoder() : _handle = _create() {
+  MouseEncoder() : _handle = check(bindings.mouseEncoderNew()) {
     _finalizer.attach(this, _handle, detach: this);
   }
 
-  /// Releases all resources associated with this encoder.
+  /// Releases the native encoder handle.
   ///
-  /// The encoder must not be used after this call. Safe to call multiple
-  /// times; subsequent calls are no-ops.
+  /// Must be called to free resources; the encoder must not be used
+  /// afterward.
   void dispose() {
-    if (_disposed) return;
-    _disposed = true;
     _finalizer.detach(this);
     bindings.mouseEncoderFree(_handle);
   }
@@ -82,7 +72,7 @@ class MouseEncoder {
   /// if (seq.isNotEmpty) pty.write(utf8.encode(seq));
   /// ```
   String encode(MouseEvent event) {
-    return check(bindings.mouseEncoderEncode(_handle, mouseEventHandle(event)));
+    return check(bindings.mouseEncoderEncode(_handle, event._handle));
   }
 
   /// Clears internal motion deduplication state (last tracked cell).
@@ -101,8 +91,8 @@ class MouseEncoder {
   /// Sets the mouse output format (X10, UTF-8, SGR, URxvt, or SGR-Pixels).
   ///
   /// Controls how mouse coordinates and buttons are encoded in the escape
-  /// sequence. Typically synced from the terminal via [syncFrom], but can
-  /// be set directly.
+  /// sequence. Typically synced from the terminal via [sync], but can be
+  /// set directly.
   void setFormat(MouseFormat format) {
     bindings.mouseEncoderSetFormat(_handle, format);
   }
@@ -110,10 +100,9 @@ class MouseEncoder {
   /// Sets the renderer size context for pixel-to-cell coordinate conversion.
   ///
   /// Describes the rendered terminal geometry used to convert surface-space
-  /// pixel positions into encoded cell coordinates. Must be called whenever
-  /// the terminal grid dimensions or cell size change. Without this, the
-  /// encoder cannot convert pixel positions to cell coordinates and will
-  /// produce empty output.
+  /// pixel positions into encoded cell coordinates. Call once up front and
+  /// again whenever the terminal grid dimensions or cell size change;
+  /// [encode] needs this to produce a non-empty sequence.
   void setSize(MouseEncoderSize size) {
     bindings.mouseEncoderSetSize(_handle, size);
   }
@@ -121,7 +110,7 @@ class MouseEncoder {
   /// Sets the mouse tracking mode (none, X10, normal, button, or any).
   ///
   /// Controls which mouse events are reported. Typically synced from the
-  /// terminal via [syncFrom], but can be set directly.
+  /// terminal via [sync], but can be set directly.
   void setTrackingMode(MouseTracking mode) {
     bindings.mouseEncoderSetTrackingMode(_handle, mode);
   }
@@ -134,14 +123,13 @@ class MouseEncoder {
     bindings.mouseEncoderSetBoolOpt(_handle, .trackLastCell, value: enabled);
   }
 
-  /// Syncs tracking mode and output format from the [terminal]'s current
-  /// state.
+  /// Syncs tracking mode and output format from [terminal]'s current state.
   ///
   /// Reads the terminal's mouse tracking mode and output format and applies
-  /// them to the encoder. Does not modify size or any-button state.
-  void syncFrom(Terminal terminal) {
-    bindings.mouseEncoderSetOptFromTerminal(_handle, terminalHandle(terminal));
+  /// them to the encoder. Call immediately before each [encode] so the
+  /// produced sequence matches the terminal's current state. Does not
+  /// modify size or any-button state.
+  void sync(Terminal terminal) {
+    bindings.mouseEncoderSetOptFromTerminal(_handle, terminal._handle);
   }
-
-  static int _create() => check(bindings.mouseEncoderNew());
 }

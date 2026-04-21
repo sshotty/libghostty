@@ -22,7 +22,6 @@ void main() {
         ...utf8.encode('CD'),
       ]),
     );
-    terminal.renderState.update();
   });
 
   tearDown(() => terminal.dispose());
@@ -93,7 +92,6 @@ void main() {
       addTearDown(t.dispose);
       // "ABCDEFGH" wraps: row 0 "ABCDE" (wrapped) → row 1 "FGH  "
       t.write(Uint8List.fromList(utf8.encode('ABCDEFGH')));
-      t.renderState.update();
 
       final b0 = t.lineBoundaryAt(0);
       expect(b0.startRow, 0);
@@ -108,7 +106,6 @@ void main() {
       final t = Terminal(cols: 5, rows: 4);
       addTearDown(t.dispose);
       t.write(Uint8List.fromList(utf8.encode('AB\r\nCD')));
-      t.renderState.update();
 
       expect(t.lineBoundaryAt(0).endCol, 2);
       expect(t.lineBoundaryAt(1).endCol, 2);

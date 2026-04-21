@@ -1,3 +1,5 @@
+import 'package:meta/meta.dart';
+
 import '../bindings/bindings.dart';
 import '../ffi/libghostty_enums.g.dart';
 
@@ -44,26 +46,24 @@ class OscCommand {
 ///
 /// parser.dispose();
 /// ```
-class OscParser {
+@immutable
+final class OscParser {
   static final _finalizer = Finalizer<int>(bindings.oscFree);
 
   final int _handle;
-  var _disposed = false;
 
   /// Creates a new OSC parser.
   ///
   /// Throws [OutOfMemoryException] if the native allocation fails.
-  OscParser() : _handle = _create() {
+  OscParser() : _handle = check(bindings.oscNew()) {
     _finalizer.attach(this, _handle, detach: this);
   }
 
-  /// Releases all resources associated with this parser.
+  /// Releases the native parser handle.
   ///
-  /// The parser must not be used after this call. Safe to call multiple
-  /// times; subsequent calls are no-ops.
+  /// Must be called to free resources; the parser must not be used
+  /// afterward.
   void dispose() {
-    if (_disposed) return;
-    _disposed = true;
     _finalizer.detach(this);
     bindings.oscFree(_handle);
   }
@@ -114,6 +114,4 @@ class OscParser {
   /// Clears any partially parsed sequence. Useful for reusing the parser
   /// or recovering from parse errors.
   void reset() => bindings.oscReset(_handle);
-
-  static int _create() => check(bindings.oscNew());
 }

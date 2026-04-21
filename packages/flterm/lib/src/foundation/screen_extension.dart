@@ -1,4 +1,5 @@
-import 'package:libghostty/libghostty.dart' show CellWidth, Terminal;
+import 'package:libghostty/libghostty.dart'
+    show CellWidth, GridRef, RenderState, Terminal;
 
 final _defaultWordPattern = RegExp(r'\w');
 
@@ -6,7 +7,7 @@ final _defaultWordPattern = RegExp(r'\w');
 ///
 /// Provides hit-testing and text navigation operations used by the gesture
 /// detector to resolve click positions into selection ranges. All methods
-/// operate on the current viewport (render state) and handle wide characters
+/// operate on the terminal's current viewport and handle wide characters
 /// and row wrapping transparently.
 ///
 /// ```dart
@@ -25,36 +26,40 @@ extension TerminalScreenExtension on Terminal {
   ///
   /// Returns [row] clamped to the viewport when out of bounds.
   ({int startRow, int endRow, int endCol}) lineBoundaryAt(int row) {
-    final rs = renderState;
-    if (row < 0 || row >= rs.rows) {
-      return (startRow: row, endRow: row, endCol: 0);
+    final rs = RenderState()..update(this);
+    try {
+      if (row < 0 || row >= rs.rows) {
+        return (startRow: row, endRow: row, endCol: 0);
+      }
+      var start = row;
+      while (start > 0) {
+        final ref = GridRef.at(this, col: 0, row: start - 1);
+        final wrap = ref.rowWrap;
+        ref.dispose();
+        if (!wrap) break;
+        start--;
+      }
+      var end = row;
+      while (end < rs.rows - 1) {
+        final ref = GridRef.at(this, col: 0, row: end);
+        final wrap = ref.rowWrap;
+        ref.dispose();
+        if (!wrap) break;
+        end++;
+      }
+      var endCol = rs.cols;
+      while (endCol > 0) {
+        final ref = GridRef.at(this, col: endCol - 1, row: end);
+        final hasContent = ref.graphemes.isNotEmpty;
+        final isSpacer = ref.wide == CellWidth.spacerTail;
+        ref.dispose();
+        if (hasContent || isSpacer) break;
+        endCol--;
+      }
+      return (startRow: start, endRow: end, endCol: endCol);
+    } finally {
+      rs.dispose();
     }
-    var start = row;
-    while (start > 0) {
-      final ref = gridRefAt(col: 0, row: start - 1);
-      final wrap = ref.rowWrap;
-      ref.dispose();
-      if (!wrap) break;
-      start--;
-    }
-    var end = row;
-    while (end < rs.rows - 1) {
-      final ref = gridRefAt(col: 0, row: end);
-      final wrap = ref.rowWrap;
-      ref.dispose();
-      if (!wrap) break;
-      end++;
-    }
-    var endCol = rs.cols;
-    while (endCol > 0) {
-      final ref = gridRefAt(col: endCol - 1, row: end);
-      final hasContent = ref.graphemes.isNotEmpty;
-      final isSpacer = ref.wide == .spacerTail;
-      ref.dispose();
-      if (hasContent || isSpacer) break;
-      endCol--;
-    }
-    return (startRow: start, endRow: end, endCol: endCol);
   }
 
   /// Snaps a column to a wide-character boundary.
@@ -66,15 +71,19 @@ extension TerminalScreenExtension on Terminal {
   ///
   /// Returns [col] unchanged for single-width cells or out-of-bounds input.
   int snapColToWideBoundary(int row, int col, {required bool inclusive}) {
-    final rs = renderState;
-    if (row < 0 || row >= rs.rows || col < 0 || col >= rs.cols) return col;
-    final ref = gridRefAt(col: col, row: row);
-    final w = ref.wide;
-    final isW = ref.isWide;
-    ref.dispose();
-    if (isW) return inclusive ? col : col + 2;
-    if (w == CellWidth.spacerTail) return inclusive ? col - 1 : col + 1;
-    return col;
+    final rs = RenderState()..update(this);
+    try {
+      if (row < 0 || row >= rs.rows || col < 0 || col >= rs.cols) return col;
+      final ref = GridRef.at(this, col: col, row: row);
+      final w = ref.wide;
+      final isW = ref.isWide;
+      ref.dispose();
+      if (isW) return inclusive ? col : col + 2;
+      if (w == CellWidth.spacerTail) return inclusive ? col - 1 : col + 1;
+      return col;
+    } finally {
+      rs.dispose();
+    }
   }
 
   /// Adjusts selection start and end columns to respect wide-character
@@ -120,72 +129,76 @@ extension TerminalScreenExtension on Terminal {
     Pattern? wordPattern,
   }) {
     final isWord = wordPattern ?? _defaultWordPattern;
-    final rs = renderState;
-    if (row < 0 || row >= rs.rows) return (col, col + 1);
+    final rs = RenderState()..update(this);
+    try {
+      if (row < 0 || row >= rs.rows) return (col, col + 1);
 
-    final maxCol = rs.cols;
-    if (col < 0 || col >= maxCol) return (col, col + 1);
+      final maxCol = rs.cols;
+      if (col < 0 || col >= maxCol) return (col, col + 1);
 
-    int snapped;
-    {
-      final ref = gridRefAt(col: col, row: row);
-      snapped = ref.wide == CellWidth.spacerTail && col > 0 ? col - 1 : col;
-      ref.dispose();
-    }
+      int snapped;
+      {
+        final ref = GridRef.at(this, col: col, row: row);
+        snapped = ref.wide == CellWidth.spacerTail && col > 0 ? col - 1 : col;
+        ref.dispose();
+      }
 
-    String contentAt(int c) {
-      final ref = gridRefAt(col: c, row: row);
-      final s = ref.content;
-      ref.dispose();
-      return s;
-    }
+      String contentAt(int c) {
+        final ref = GridRef.at(this, col: c, row: row);
+        final s = ref.content;
+        ref.dispose();
+        return s;
+      }
 
-    CellWidth wideAt(int c) {
-      final ref = gridRefAt(col: c, row: row);
-      final w = ref.wide;
-      ref.dispose();
-      return w;
-    }
+      CellWidth wideAt(int c) {
+        final ref = GridRef.at(this, col: c, row: row);
+        final w = ref.wide;
+        ref.dispose();
+        return w;
+      }
 
-    bool isWideAt(int c) {
-      final ref = gridRefAt(col: c, row: row);
-      final w = ref.isWide;
-      ref.dispose();
-      return w;
-    }
+      bool isWideAt(int c) {
+        final ref = GridRef.at(this, col: c, row: row);
+        final w = ref.isWide;
+        ref.dispose();
+        return w;
+      }
 
-    bool matchesWord(String s) => isWord.matchAsPrefix(s) != null;
+      bool matchesWord(String s) => isWord.matchAsPrefix(s) != null;
 
-    final charAtPos = contentAt(snapped);
-    if (charAtPos.isEmpty || !matchesWord(charAtPos)) {
-      final span = isWideAt(snapped) ? 2 : 1;
-      return (snapped, snapped + span);
-    }
+      final charAtPos = contentAt(snapped);
+      if (charAtPos.isEmpty || !matchesWord(charAtPos)) {
+        final span = isWideAt(snapped) ? 2 : 1;
+        return (snapped, snapped + span);
+      }
 
-    var start = snapped;
-    while (start > 0) {
-      final w = wideAt(start - 1);
-      if (w == CellWidth.spacerTail) {
+      var start = snapped;
+      while (start > 0) {
+        final w = wideAt(start - 1);
+        if (w == CellWidth.spacerTail) {
+          start--;
+          continue;
+        }
+        final c = contentAt(start - 1);
+        if (c.isEmpty || !matchesWord(c)) break;
         start--;
-        continue;
       }
-      final c = contentAt(start - 1);
-      if (c.isEmpty || !matchesWord(c)) break;
-      start--;
-    }
 
-    var end = snapped + 1;
-    while (end < maxCol) {
-      final w = wideAt(end);
-      if (w == CellWidth.spacerTail) {
+      var end = snapped + 1;
+      while (end < maxCol) {
+        final w = wideAt(end);
+        if (w == CellWidth.spacerTail) {
+          end++;
+          continue;
+        }
+        final c = contentAt(end);
+        if (c.isEmpty || !matchesWord(c)) break;
         end++;
-        continue;
       }
-      final c = contentAt(end);
-      if (c.isEmpty || !matchesWord(c)) break;
-      end++;
-    }
 
-    return (start, end);
+      return (start, end);
+    } finally {
+      rs.dispose();
+    }
   }
 }

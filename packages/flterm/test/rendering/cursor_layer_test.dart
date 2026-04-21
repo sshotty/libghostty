@@ -137,7 +137,6 @@ void main() {
         final terminal = Terminal(cols: _cols, rows: _rows);
         addTearDown(terminal.dispose);
         terminal.writeUtf8('\x1b[7mHello\x1b[m World!\r\n\x1b[1;4H');
-        terminal.renderState.update();
 
         await _pumpRenderer(
           tester,
@@ -156,7 +155,6 @@ void main() {
         final terminal = Terminal(cols: _cols, rows: _rows);
         addTearDown(terminal.dispose);
         terminal.writeUtf8('\x1b[31;7mHello\x1b[m World!\r\n\x1b[1;2H');
-        terminal.renderState.update();
 
         await _pumpRenderer(
           tester,

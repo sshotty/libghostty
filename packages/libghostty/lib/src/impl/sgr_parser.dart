@@ -1,3 +1,5 @@
+import 'package:meta/meta.dart';
+
 import '../bindings/bindings.dart';
 
 /// Parses SGR (Select Graphic Rendition) escape sequence parameters into
@@ -18,27 +20,25 @@ import '../bindings/bindings.dart';
 /// // attrs: [SgrAttribute(tag: .bold), SgrAttribute(tag: .directColorFg, ...)]
 /// parser.dispose();
 /// ```
-class SgrParser {
+@immutable
+final class SgrParser {
   static final _finalizer = Finalizer<int>(bindings.sgrFree);
 
   final int _handle;
-  var _disposed = false;
 
   /// Creates a new SGR parser.
   ///
   /// Throws [OutOfMemoryException] if the native allocation fails.
-  SgrParser() : _handle = _create() {
+  SgrParser() : _handle = check(bindings.sgrNew()) {
     _finalizer.attach(this, _handle, detach: this);
   }
 
-  /// Releases all resources associated with this parser.
+  /// Releases the native parser handle.
   ///
-  /// Any [SgrAttribute] values previously returned by [parse] become invalid
-  /// after this call. Safe to call multiple times; subsequent calls are
-  /// no-ops.
+  /// Must be called to free resources; the parser must not be used
+  /// afterward. Any [SgrAttribute] values previously returned by [parse]
+  /// become invalid as well.
   void dispose() {
-    if (_disposed) return;
-    _disposed = true;
     _finalizer.detach(this);
     bindings.sgrFree(_handle);
   }
@@ -83,6 +83,4 @@ class SgrParser {
   /// After calling this, the next [parse] or internal iteration will start
   /// from the beginning.
   void reset() => bindings.sgrReset(_handle);
-
-  static int _create() => check(bindings.sgrNew());
 }

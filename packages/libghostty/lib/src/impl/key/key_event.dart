@@ -1,11 +1,4 @@
-import 'package:meta/meta.dart';
-
-import '../../bindings/bindings.dart';
-import '../../ffi/libghostty_enums.g.dart';
-import 'mods.dart';
-
-@internal
-int keyEventHandle(KeyEvent event) => event._handle;
+part of '../terminal/terminal.dart';
 
 /// A keyboard input event containing physical key information, modifiers, and
 /// generated text for terminal key encoding.
@@ -28,11 +21,11 @@ int keyEventHandle(KeyEvent event) => event._handle;
 ///
 /// event.dispose();
 /// ```
-class KeyEvent {
+@immutable
+final class KeyEvent {
   static final _finalizer = Finalizer<int>(bindings.keyEventFree);
 
   final int _handle;
-  var _disposed = false;
 
   /// Creates a new key event with default values.
   ///
@@ -41,7 +34,7 @@ class KeyEvent {
   /// between encode calls.
   ///
   /// Throws [OutOfMemoryException] if the native allocation fails.
-  KeyEvent() : _handle = _create() {
+  KeyEvent() : _handle = check(bindings.keyEventNew()) {
     _finalizer.attach(this, _handle, detach: this);
   }
 
@@ -121,16 +114,12 @@ class KeyEvent {
   /// The string is copied into the event.
   set utf8(String? value) => bindings.keyEventSetUtf8(_handle, value);
 
-  /// Releases all resources associated with this key event.
+  /// Releases the native key event handle.
   ///
-  /// The event must not be used after this call. Safe to call multiple
-  /// times; subsequent calls are no-ops.
+  /// Must be called to free resources; the event must not be used
+  /// afterward.
   void dispose() {
-    if (_disposed) return;
-    _disposed = true;
     _finalizer.detach(this);
     bindings.keyEventFree(_handle);
   }
-
-  static int _create() => check(bindings.keyEventNew());
 }

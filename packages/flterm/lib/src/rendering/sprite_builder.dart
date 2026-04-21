@@ -40,10 +40,11 @@ bool _isOperator(int cp) {
 
 /// Builds all sprite data for one terminal frame.
 ///
-/// Reads terminal cells via [RenderState] and populates [SpriteBuffer]
-/// with glyph positions, background color runs, and decoration rects.
-/// After [build] returns, the atlas image and sprite vertices are
-/// finalized and ready for painters.
+/// Reads terminal cells via [RenderState] (walked with pre-allocated
+/// [RowIterator] and [CellIterator]) and populates [SpriteBuffer] with
+/// glyph positions, background color runs, and decoration rects. After
+/// [build] returns, the atlas image and sprite vertices are finalized
+/// and ready for painters.
 ///
 /// Key optimizations in the per-cell hot loop:
 /// - Style cache indexed by styleId avoids redundant color resolution.
@@ -58,6 +59,8 @@ class SpriteBuilder {
   final TerminalPaintState _state;
   final _StyleCache _styleCache;
   final _RowCursor _cursor;
+  final RowIterator _rows;
+  final CellIterator _cells;
 
   // Per-frame cached values used in the per-cell hot loop.
   late double _cellWidth;
@@ -72,7 +75,9 @@ class SpriteBuilder {
 
   SpriteBuilder(this._atlas, this._sprites, this._state)
     : _styleCache = _StyleCache(_state),
-      _cursor = _RowCursor();
+      _cursor = _RowCursor(),
+      _rows = RowIterator(),
+      _cells = CellIterator();
 
   /// Rebuilds all sprites from [renderState].
   ///
@@ -95,11 +100,14 @@ class SpriteBuilder {
     _cols = _state.cols;
     _styleCache.beginFrame();
 
+    _rows.reset(renderState);
     var row = 0;
-    while (renderState.nextRow()) {
+    while (_rows.next()) {
       if (row >= _state.rows) break;
       _cursor.reset(row, _cellHeight, _bgArgb);
-      _buildRow(renderState);
+      _cells.reset(_rows);
+      _buildRow(_cells);
+      _rows.dirty = false;
       row++;
     }
 
@@ -107,19 +115,27 @@ class SpriteBuilder {
     _sprites.seal();
   }
 
+  /// Releases the owned [RowIterator] and [CellIterator] handles.
+  ///
+  /// Must be called to free resources; the builder must not be used
+  /// afterward.
+  void dispose() {
+    _cells.dispose();
+    _rows.dispose();
+  }
+
   /// Iterates cells in one row, emitting glyphs, backgrounds, and decorations.
-  void _buildRow(RenderState renderState) {
+  void _buildRow(CellIterator cells) {
     final cursor = _cursor;
     final cellWidth = _cellWidth;
 
-    while (renderState.nextCell() && cursor.col < _cols) {
-      final cell = renderState.cell;
-      final isWide = cell.wide == .wide;
+    while (cells.next() && cursor.col < _cols) {
+      final isWide = cells.wide == .wide;
 
-      if (cell.styleId != cursor.prevStyleId) {
+      if (cells.styleId != cursor.prevStyleId) {
         _flushOperatorRun(cursor);
-        final (fg, bg, style) = _styleCache.resolve(cell);
-        cursor.prevStyleId = cell.styleId;
+        final (fg, bg, style) = _styleCache.resolve(cells);
+        cursor.prevStyleId = cells.styleId;
         cursor.foreground = fg;
         cursor.background = bg;
         cursor.style = style;
@@ -134,16 +150,16 @@ class SpriteBuilder {
         final advance = isWide ? 2 : 1;
         cursor.col += advance;
         cursor.spriteX += cellWidth * advance;
-        if (isWide) renderState.nextCell();
+        if (isWide) cells.next();
         continue;
       }
 
       final decorationX = cursor.spriteX;
 
       if (isWide) {
-        _emitWide(cell, renderState, cursor);
-      } else if (cell.hasText) {
-        _emitNarrow(cell, cursor);
+        _emitWide(cells, cursor);
+      } else if (cells.hasText) {
+        _emitNarrow(cells, cursor);
       } else {
         _flushOperatorRun(cursor);
       }
@@ -240,7 +256,7 @@ class SpriteBuilder {
   /// - Multi-codepoint graphemes and VS16 emoji (U+FE0F): uses string
   ///   key; VS16 presence triggers the emoji sprite path (full color,
   ///   no tinting) instead of text sprite.
-  void _emitNarrow(Cell cell, _RowCursor cursor) {
+  void _emitNarrow(CellIterator cell, _RowCursor cursor) {
     final cp = cell.codepoint;
     final style = cursor.style!;
 
@@ -307,7 +323,7 @@ class SpriteBuilder {
   /// and are scaled/centered via _compositeEmoji. Misclassifying a
   /// CJK character as emoji would lose its foreground color; misclassifying
   /// an emoji as CJK would tint away its colors.
-  void _emitWide(Cell cell, RenderState renderState, _RowCursor cursor) {
+  void _emitWide(CellIterator cell, _RowCursor cursor) {
     _flushOperatorRun(cursor);
     final content = cell.content;
     if (content.isNotEmpty && content != ' ') {
@@ -345,7 +361,7 @@ class SpriteBuilder {
       cursor.bgRunStart = cursor.col + 1;
       cursor.bgRunArgb = _bgArgb;
     }
-    renderState.nextCell();
+    cell.next();
   }
 
   /// Flushes a background color run when the current cell's background
@@ -473,7 +489,7 @@ class _StyleCache {
   }
 
   /// Returns cached or freshly resolved (fg, bg, style) for [cell].
-  (int foreground, int background, Style style) resolve(Cell cell) {
+  (int foreground, int background, Style style) resolve(CellIterator cell) {
     final id = cell.styleId;
 
     if (id < _maxEntries && _gen[id] == _generation) {

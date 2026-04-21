@@ -33,6 +33,9 @@ class TerminalControllerImpl extends TerminalController
 
   @override
   final Terminal terminal;
+  final _renderState = RenderState();
+  final _keyEncoder = KeyEncoder();
+  final _mouseEncoder = MouseEncoder();
   final vt.KeyEvent _keyEvent;
   final MouseEvent _mouseEvent;
   final TerminalInputClient _textInput;
@@ -184,7 +187,8 @@ class TerminalControllerImpl extends TerminalController
     bool trim = false,
     FormatterExtra extra = const FormatterExtra(),
   }) {
-    return terminal.createFormatter(
+    return Formatter(
+      terminal: terminal,
       format: format,
       unwrap: unwrap,
       trim: trim,
@@ -211,6 +215,9 @@ class TerminalControllerImpl extends TerminalController
     detach();
     _keyEvent.dispose();
     _mouseEvent.dispose();
+    _keyEncoder.dispose();
+    _mouseEncoder.dispose();
+    _renderState.dispose();
     terminal.dispose();
     super.dispose();
   }
@@ -240,8 +247,8 @@ class TerminalControllerImpl extends TerminalController
       ..utf8 = _encoderCharacter(event.character)
       ..unshiftedCodepoint = unshiftedCodepointForKey(key);
 
-    terminal.keyEncoder.syncFrom(terminal);
-    final result = terminal.keyEncoder.encode(_keyEvent);
+    _keyEncoder.sync(terminal);
+    final result = _keyEncoder.encode(_keyEvent);
     if (result.isEmpty) return .ignored;
 
     clearVirtualMods();
@@ -258,8 +265,8 @@ class TerminalControllerImpl extends TerminalController
       ..button = event.button
       ..mods = _currentMods()
       ..setPosition(x: event.pixelX, y: event.pixelY);
-    terminal.mouseEncoder.syncFrom(terminal);
-    final result = terminal.mouseEncoder.encode(_mouseEvent);
+    _mouseEncoder.sync(terminal);
+    final result = _mouseEncoder.encode(_mouseEvent);
     if (result.isEmpty) return;
     _emitOutput(utf8.encode(result));
   }
@@ -276,7 +283,7 @@ class TerminalControllerImpl extends TerminalController
     _lastDevicePixelRatio = devicePixelRatio;
     final cellWidthPx = (metrics.cellWidth * devicePixelRatio).round();
     final cellHeightPx = (metrics.cellHeight * devicePixelRatio).round();
-    terminal.mouseEncoder.setSize(
+    _mouseEncoder.setSize(
       MouseEncoderSize(
         screenWidth: cols * cellWidthPx,
         screenHeight: rows * cellHeightPx,
@@ -309,7 +316,7 @@ class TerminalControllerImpl extends TerminalController
       final button = lines < 0 ? MouseButton.four : MouseButton.five;
       final count = lines.abs();
 
-      if (count > 0) terminal.mouseEncoder.syncFrom(terminal);
+      if (count > 0) _mouseEncoder.sync(terminal);
 
       for (var i = 0; i < count; i++) {
         _mouseEvent
@@ -317,7 +324,7 @@ class TerminalControllerImpl extends TerminalController
           ..button = button
           ..mods = _currentMods()
           ..setPosition(x: 0, y: 0);
-        final result = terminal.mouseEncoder.encode(_mouseEvent);
+        final result = _mouseEncoder.encode(_mouseEvent);
         if (result.isNotEmpty) _emitOutput(utf8.encode(result));
       }
       return;
@@ -379,15 +386,16 @@ class TerminalControllerImpl extends TerminalController
   void selectAll() {
     terminal.scrollToBottom();
     final scrollbackLen = terminal.scrollbackRows;
-    final rows = terminal.renderState.rows;
-    final cols = terminal.renderState.cols;
+    _renderState.update(terminal);
+    final rows = _renderState.rows;
+    final cols = _renderState.cols;
 
     var lastScreenRow = -1;
     var lastContentCol = 0;
     for (var row = 0; row < rows; row++) {
       var rowLastCol = 0;
       for (var col = 0; col < cols; col++) {
-        final ref = terminal.gridRefAt(col: col, row: row);
+        final ref = GridRef.at(terminal, col: col, row: row);
         final hasContent = ref.graphemes.isNotEmpty;
         ref.dispose();
         if (hasContent) rowLastCol = col + 1;
@@ -424,7 +432,8 @@ class TerminalControllerImpl extends TerminalController
     final selection = _selection;
     if (selection == null) return '';
 
-    final cols = terminal.renderState.cols;
+    _renderState.update(terminal);
+    final cols = _renderState.cols;
     final total = terminal.totalRows;
     if (cols <= 0 || total <= 0) return '';
     final topRow = selection.topRow.clamp(0, total - 1);
@@ -436,7 +445,8 @@ class TerminalControllerImpl extends TerminalController
     final bottomCol = (selection.bottomCol - 1).clamp(0, cols - 1);
     if (block && topCol > bottomCol) return '';
 
-    final formatter = terminal.createFormatter(
+    final formatter = Formatter(
+      terminal: terminal,
       format: format,
       unwrap: !block,
       selection: Selection(
@@ -459,10 +469,14 @@ class TerminalControllerImpl extends TerminalController
   @override
   void selectLine(int row, LineSelectMode lineSelectMode) {
     final (:startRow, :endRow, :endCol) = terminal.lineBoundaryAt(row);
-    final effectiveEndCol = switch (lineSelectMode) {
-      .full => terminal.renderState.cols,
-      .content => endCol,
-    };
+    final int effectiveEndCol;
+    switch (lineSelectMode) {
+      case .full:
+        _renderState.update(terminal);
+        effectiveEndCol = _renderState.cols;
+      case .content:
+        effectiveEndCol = endCol;
+    }
     selection = TerminalSelection(
       startRow: startRow,
       startCol: 0,
@@ -498,8 +512,8 @@ class TerminalControllerImpl extends TerminalController
       ..unshiftedCodepoint = codepoint
       ..utf8 = codepoint > 0 ? String.fromCharCode(codepoint) : null;
 
-    terminal.keyEncoder.syncFrom(terminal);
-    final result = terminal.keyEncoder.encode(_keyEvent);
+    _keyEncoder.sync(terminal);
+    final result = _keyEncoder.encode(_keyEvent);
     if (result.isEmpty) return;
     _emitOutput(utf8.encode(result));
     clearVirtualMods();
@@ -581,10 +595,11 @@ class TerminalControllerImpl extends TerminalController
       _ => (0, 0),
     };
     if (dRow == 0 && dCol == 0) return false;
+    _renderState.update(terminal);
     selection = _selection!.moveEnd(
       dRow,
       dCol,
-      totalCols: terminal.renderState.cols,
+      totalCols: _renderState.cols,
       totalRows: totalRows,
     );
     return true;
@@ -606,10 +621,10 @@ class TerminalControllerImpl extends TerminalController
   }
 
   TerminalSizeInfo _handleSizeQuery() {
-    final rs = terminal.renderState;
+    _renderState.update(terminal);
     return TerminalSizeInfo(
-      rows: rs.rows,
-      columns: rs.cols,
+      rows: _renderState.rows,
+      columns: _renderState.cols,
       cellWidth: (_lastMetrics.cellWidth * _lastDevicePixelRatio).round(),
       cellHeight: (_lastMetrics.cellHeight * _lastDevicePixelRatio).round(),
     );

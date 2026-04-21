@@ -15,15 +15,28 @@ void main() {
 
   group('Terminal', () {
     late Terminal terminal;
+    late RenderState renderState;
+    late RowIterator rows;
+    late CellIterator cells;
 
-    setUp(() => terminal = Terminal(cols: 80, rows: 24));
+    setUp(() {
+      terminal = Terminal(cols: 80, rows: 24);
+      renderState = RenderState();
+      rows = RowIterator();
+      cells = CellIterator();
+    });
 
-    tearDown(() => terminal.dispose());
+    tearDown(() {
+      cells.dispose();
+      rows.dispose();
+      renderState.dispose();
+      terminal.dispose();
+    });
 
     test('initial dimensions', () {
-      terminal.renderState.update();
-      expect(terminal.renderState.cols, 80);
-      expect(terminal.renderState.rows, 24);
+      renderState.update(terminal);
+      expect(renderState.cols, 80);
+      expect(renderState.rows, 24);
     });
 
     test('write bytes and read screen', () {
@@ -36,18 +49,18 @@ void main() {
 
     test('cursor tracks position', () {
       terminal.write(Uint8List.fromList('Hi'.codeUnits));
-      terminal.renderState.update();
-      expect(terminal.renderState.cursor.col, 2);
-      expect(terminal.renderState.cursor.row, 0);
+      renderState.update(terminal);
+      expect(renderState.cursor.col, 2);
+      expect(renderState.cursor.row, 0);
     });
 
     test('cursor visibility', () {
       terminal.write(Uint8List.fromList('\x1b[?25l'.codeUnits));
-      terminal.renderState.update();
-      expect(terminal.renderState.cursor.visible, isFalse);
+      renderState.update(terminal);
+      expect(renderState.cursor.visible, isFalse);
       terminal.write(Uint8List.fromList('\x1b[?25h'.codeUnits));
-      terminal.renderState.update();
-      expect(terminal.renderState.cursor.visible, isTrue);
+      renderState.update(terminal);
+      expect(renderState.cursor.visible, isTrue);
     });
 
     group('modes', () {
@@ -193,65 +206,67 @@ void main() {
 
     group('renderState dirty', () {
       test('writing content makes renderState dirty', () {
-        terminal.renderState.update();
-        terminal.renderState.markClean();
+        renderState.update(terminal);
+        clearDirty(renderState, rows);
         terminal.write(Uint8List.fromList('A'.codeUnits));
-        terminal.renderState.update();
-        expect(terminal.renderState.dirty, isNot(DirtyState.clean));
+        renderState.update(terminal);
+        expect(renderState.dirty, isNot(DirtyState.clean));
       });
 
-      test('markClean resets dirty state', () {
+      test('dirty = clean resets global dirty', () {
         terminal.write(Uint8List.fromList('A'.codeUnits));
-        terminal.renderState.update();
-        terminal.renderState.markClean();
-        expect(terminal.renderState.dirty, DirtyState.clean);
+        renderState.update(terminal);
+        clearDirty(renderState, rows);
+        expect(renderState.dirty, DirtyState.clean);
       });
 
       test('cursor-only move does not dirty renderState', () {
         terminal.write(Uint8List.fromList('Hello'.codeUnits));
-        terminal.renderState.update();
-        terminal.renderState.markClean();
+        renderState.update(terminal);
+        clearDirty(renderState, rows);
         terminal.write(Uint8List.fromList('\x1b[H'.codeUnits));
-        terminal.renderState.update();
-        expect(terminal.renderState.dirty, DirtyState.clean);
+        renderState.update(terminal);
+        expect(renderState.dirty, DirtyState.clean);
       });
 
       test('accumulates across multiple writes', () {
-        terminal.renderState.update();
-        terminal.renderState.markClean();
+        renderState.update(terminal);
+        clearDirty(renderState, rows);
         terminal.write(Uint8List.fromList('X'.codeUnits));
         terminal.write(Uint8List.fromList('\x1b[H'.codeUnits));
-        terminal.renderState.update();
-        expect(terminal.renderState.dirty, isNot(DirtyState.clean));
+        renderState.update(terminal);
+        expect(renderState.dirty, isNot(DirtyState.clean));
       });
     });
 
     group('resize', () {
       test('updates dimensions', () {
         terminal.resize(cols: 120, rows: 40);
-        terminal.renderState.update();
-        expect(terminal.renderState.cols, 120);
-        expect(terminal.renderState.rows, 40);
+        renderState.update(terminal);
+        expect(renderState.cols, 120);
+        expect(renderState.rows, 40);
       });
 
       test('clamps cursor', () {
         terminal.write(Uint8List.fromList('\x1b[24;80H'.codeUnits));
         terminal.resize(cols: 40, rows: 10);
-        terminal.renderState.update();
-        expect(terminal.renderState.cursor.row, lessThan(10));
-        expect(terminal.renderState.cursor.col, lessThan(40));
+        renderState.update(terminal);
+        expect(renderState.cursor.row, lessThan(10));
+        expect(renderState.cursor.col, lessThan(40));
       });
 
       test('shrinking rows adjusts cursor position', () {
         final t = Terminal(cols: 10, rows: 5);
+        final rs = RenderState();
+        addTearDown(rs.dispose);
         addTearDown(t.dispose);
         t.write(Uint8List.fromList('A\r\nB\r\nC\r\nD\r\nE'.codeUnits));
-        t.renderState.update();
-        expect(t.renderState.cursor.row, 4);
+        rs.update(t);
+        expect(rs.cursor.row, 4);
 
         t.resize(cols: 10, rows: 3);
-        t.renderState.update();
-        expect(t.renderState.cursor.row, 2);
+        rs.update(t);
+        expect(rs.cursor.row, 2);
       });
 
       test('no content duplication after shrink', () {
@@ -353,11 +368,13 @@ void main() {
       group('initialization', () {
         test('fresh terminal is clean', () {
           final t = Terminal(cols: 80, rows: 24);
+          final rs = RenderState();
+          addTearDown(rs.dispose);
           addTearDown(t.dispose);
           _expectAllCellsEmpty(t);
-          t.renderState.update();
-          expect(t.renderState.cursor.row, 0);
-          expect(t.renderState.cursor.col, 0);
+          rs.update(t);
+          expect(rs.cursor.row, 0);
+          expect(rs.cursor.col, 0);
         });
 
         test('multiple dispose-recreate cycles produce clean screens', () {
@@ -433,10 +450,12 @@ void main() {
 
     test('long line wraps across rows with correct cells', () {
       final t = Terminal(cols: 5, rows: 3);
+      final rs = RenderState();
+      addTearDown(rs.dispose);
       addTearDown(t.dispose);
       t.write(Uint8List.fromList('ABCDEFGH'.codeUnits));
 
-      t.renderState.update();
+      rs.update(t);
       final cellE = readCellAt(t, 0, 4);
       expect(cellE.content, 'E');
       expect(isRowWrapped(t, 0), isTrue);
@@ -449,72 +468,72 @@ void main() {
 
     group('dirtyState', () {
       test('writing text produces partial dirty state', () {
-        terminal.renderState.update();
-        terminal.renderState.markClean();
+        renderState.update(terminal);
+        clearDirty(renderState, rows);
         terminal.write(Uint8List.fromList('Hello'.codeUnits));
-        terminal.renderState.update();
-        expect(terminal.renderState.dirty, DirtyState.partial);
+        renderState.update(terminal);
+        expect(renderState.dirty, DirtyState.partial);
       });
 
       test('cursor-only move produces clean dirty state', () {
         terminal.write(Uint8List.fromList('Hello'.codeUnits));
-        terminal.renderState.update();
-        terminal.renderState.markClean();
+        renderState.update(terminal);
+        clearDirty(renderState, rows);
         terminal.write(Uint8List.fromList('\x1b[H'.codeUnits));
-        terminal.renderState.update();
-        expect(terminal.renderState.dirty, DirtyState.clean);
+        renderState.update(terminal);
+        expect(renderState.dirty, DirtyState.clean);
       });
 
       test('alternate screen switch produces full dirty state', () {
-        terminal.renderState.update();
-        terminal.renderState.markClean();
+        renderState.update(terminal);
+        clearDirty(renderState, rows);
         terminal.write(Uint8List.fromList('\x1b[?1049h'.codeUnits));
-        terminal.renderState.update();
-        expect(terminal.renderState.dirty, DirtyState.full);
+        renderState.update(terminal);
+        expect(renderState.dirty, DirtyState.full);
       });
     });
 
     group('isRowDirty', () {
       test('written row is dirty', () {
-        terminal.renderState.update();
-        terminal.renderState.markClean();
+        renderState.update(terminal);
+        clearDirty(renderState, rows);
         terminal.write(Uint8List.fromList('Hello'.codeUnits));
-        terminal.renderState.update();
-        expect(isRowDirty(terminal, 0), isTrue);
+        renderState.update(terminal);
+        expect(isRowDirty(renderState, 0), isTrue);
       });
 
       test('unwritten row is not dirty', () {
-        terminal.renderState.update();
-        terminal.renderState.markClean();
+        renderState.update(terminal);
+        clearDirty(renderState, rows);
         terminal.write(Uint8List.fromList('Hello'.codeUnits));
-        terminal.renderState.update();
-        expect(isRowDirty(terminal, 1), isFalse);
+        renderState.update(terminal);
+        expect(isRowDirty(renderState, 1), isFalse);
       });
 
-      test('markClean resets row dirty flags', () {
+      test('clearing per-row dirty via iterator resets flags', () {
         terminal.write(Uint8List.fromList('Hello'.codeUnits));
-        terminal.renderState.update();
-        terminal.renderState.markClean();
-        expect(isRowDirty(terminal, 0), isFalse);
+        renderState.update(terminal);
+        clearDirty(renderState, rows);
+        expect(isRowDirty(renderState, 0), isFalse);
       });
 
       test('multiple rows track independently', () {
-        terminal.renderState.update();
-        terminal.renderState.markClean();
+        renderState.update(terminal);
+        clearDirty(renderState, rows);
         terminal.write(Uint8List.fromList('Line1\r\nLine2'.codeUnits));
-        terminal.renderState.update();
-        expect(isRowDirty(terminal, 0), isTrue);
-        expect(isRowDirty(terminal, 1), isTrue);
-        expect(isRowDirty(terminal, 2), isFalse);
+        renderState.update(terminal);
+        expect(isRowDirty(renderState, 0), isTrue);
+        expect(isRowDirty(renderState, 1), isTrue);
+        expect(isRowDirty(renderState, 2), isFalse);
       });
 
       test('cursor-only move does not dirty row', () {
         terminal.write(Uint8List.fromList('Hello'.codeUnits));
-        terminal.renderState.update();
-        terminal.renderState.markClean();
+        renderState.update(terminal);
+        clearDirty(renderState, rows);
         terminal.write(Uint8List.fromList('\x1b[H'.codeUnits));
-        terminal.renderState.update();
-        expect(isRowDirty(terminal, 0), isFalse);
+        renderState.update(terminal);
+        expect(isRowDirty(renderState, 0), isFalse);
       });
     });
 
@@ -614,68 +633,73 @@ void main() {
       });
     });
 
-    group('Row properties', () {
+    group('RowIterator properties', () {
       test('empty row has no content flags', () {
-        terminal.renderState.update();
-        terminal.renderState.nextRow();
-        final row = terminal.renderState.row;
-        expect(row.hasGrapheme, isFalse);
-        expect(row.hasStyled, isFalse);
-        expect(row.hasHyperlink, isFalse);
-        expect(row.hasKittyVirtualPlaceholder, isFalse);
-        expect(row.semanticPrompt, SemanticPrompt.none);
+        renderState.update(terminal);
+        rows.reset(renderState);
+        rows.next();
+        expect(rows.hasGrapheme, isFalse);
+        expect(rows.hasStyled, isFalse);
+        expect(rows.hasHyperlink, isFalse);
+        expect(rows.hasKittyVirtualPlaceholder, isFalse);
+        expect(rows.semanticPrompt, SemanticPrompt.none);
       });
 
       test('styled row reports hasStyled', () {
         terminal.write(Uint8List.fromList('\x1b[1mBold'.codeUnits));
-        terminal.renderState.update();
-        terminal.renderState.nextRow();
-        expect(terminal.renderState.row.hasStyled, isTrue);
+        renderState.update(terminal);
+        rows.reset(renderState);
+        rows.next();
+        expect(rows.hasStyled, isTrue);
       });
     });
 
-    group('Cell properties', () {
+    group('CellIterator properties', () {
+      void advanceToFirstCell() {
+        renderState.update(terminal);
+        rows.reset(renderState);
+        rows.next();
+        cells.reset(rows);
+        cells.next();
+      }
+
       test('default cell has no styling, protection, or special content', () {
         terminal.write(Uint8List.fromList('A'.codeUnits));
-        terminal.renderState.update();
-        terminal.renderState.nextRow();
-        terminal.renderState.nextCell();
-        final cell = terminal.renderState.cell;
-        expect(cell.style.bold, isFalse);
-        expect(cell.isProtected, isFalse);
-        expect(cell.semanticContent, SemanticContent.output);
+        advanceToFirstCell();
+        expect(cells.style.bold, isFalse);
+        expect(cells.isProtected, isFalse);
+        expect(cells.semanticContent, SemanticContent.output);
       });
 
       test('styled cell reports hasStyling', () {
         terminal.write(Uint8List.fromList('\x1b[1mB'.codeUnits));
-        terminal.renderState.update();
-        terminal.renderState.nextRow();
-        terminal.renderState.nextCell();
-        expect(terminal.renderState.cell.hasStyling, isTrue);
+        advanceToFirstCell();
+        expect(cells.hasStyling, isTrue);
       });
     });
 
     group('Cursor properties', () {
       test('cursor wideTail is false on normal position', () {
-        terminal.renderState.update();
-        final cursor = terminal.renderState.cursor;
+        renderState.update(terminal);
+        final cursor = renderState.cursor;
         expect(cursor.wideTail, isFalse);
       });
     });
 
-    group('resetIteration', () {
-      test('allows re-iterating rows after exhaustion', () {
+    group('re-iteration', () {
+      test('rebinding the iterator starts from the first row', () {
         terminal.write(Uint8List.fromList('Hello'.codeUnits));
-        terminal.renderState.update();
+        renderState.update(terminal);
 
         var count1 = 0;
-        while (terminal.renderState.nextRow()) {
+        rows.reset(renderState);
+        while (rows.next()) {
           count1++;
         }
 
-        terminal.renderState.resetIteration();
         var count2 = 0;
-        while (terminal.renderState.nextRow()) {
+        rows.reset(renderState);
+        while (rows.next()) {
           count2++;
         }
 
@@ -684,45 +708,56 @@ void main() {
       });
     });
 
-    group('selectCell', () {
+    group('CellIterator.select', () {
       test('reads specific column content', () {
         terminal.write(Uint8List.fromList('ABCDE'.codeUnits));
-        terminal.renderState.update();
+        renderState.update(terminal);
 
-        terminal.renderState.nextRow();
-        terminal.renderState.selectCell(2);
-        expect(terminal.renderState.cell.content, 'C');
+        rows.reset(renderState);
+        rows.next();
+        cells.reset(rows);
 
-        terminal.renderState.selectCell(0);
-        expect(terminal.renderState.cell.content, 'A');
+        cells.select(2);
+        expect(cells.content, 'C');
 
-        terminal.renderState.selectCell(4);
-        expect(terminal.renderState.cell.content, 'E');
-      });
-    });
+        cells.select(0);
+        expect(cells.content, 'A');
 
-    group('dispose', () {
-      test('double dispose is safe', () {
-        terminal.dispose();
-        terminal.dispose();
+        cells.select(4);
+        expect(cells.content, 'E');
       });
     });
   });
 }
 
+void clearDirty(RenderState renderState, RowIterator rows) {
+  rows.reset(renderState);
+  while (rows.next()) {
+    rows.dirty = false;
+  }
+  renderState.dirty = DirtyState.clean;
+}
+
 void _expectAllCellsEmpty(Terminal terminal) {
-  terminal.renderState.update();
-  var rowIndex = 0;
-  while (terminal.renderState.nextRow()) {
-    var colIndex = 0;
-    while (terminal.renderState.nextCell()) {
-      expect(
-        terminal.renderState.cell.hasText,
-        isFalse,
-        reason: 'cell at ($rowIndex, $colIndex) should be empty',
-      );
-      colIndex++;
+  final rs = RenderState();
+  final rowIter = RowIterator();
+  final cellIter = CellIterator();
+  try {
+    rs.update(terminal);
+    rowIter.reset(rs);
+    while (rowIter.next()) {
+      cellIter.reset(rowIter);
+      while (cellIter.next()) {
+        expect(
+          cellIter.hasText,
+          isFalse,
+          reason: 'cell at (${rowIter.index}, ${cellIter.col}) should be empty',
+        );
+      }
     }
-    rowIndex++;
+  } finally {
+    cellIter.dispose();
+    rowIter.dispose();
+    rs.dispose();
   }
 }

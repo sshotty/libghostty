@@ -1,11 +1,4 @@
-import 'package:meta/meta.dart';
-
-import '../../bindings/bindings.dart';
-import '../../ffi/libghostty_enums.g.dart';
-import '../key/mods.dart';
-
-@internal
-int mouseEventHandle(MouseEvent event) => event._handle;
+part of '../terminal/terminal.dart';
 
 /// A normalized mouse input event containing action, button, modifiers, and
 /// surface-space position for terminal mouse encoding.
@@ -29,12 +22,11 @@ int mouseEventHandle(MouseEvent event) => event._handle;
 ///
 /// event.dispose();
 /// ```
-class MouseEvent {
+@immutable
+final class MouseEvent {
   static final _finalizer = Finalizer<int>(bindings.mouseEventFree);
 
   final int _handle;
-
-  var _disposed = false;
 
   /// Creates a new mouse event with default values.
   ///
@@ -42,7 +34,7 @@ class MouseEvent {
   /// [setPosition]) before passing to [MouseEncoder.encode].
   ///
   /// Throws [OutOfMemoryException] if the native allocation fails.
-  MouseEvent() : _handle = _create() {
+  MouseEvent() : _handle = check(bindings.mouseEventNew()) {
     _finalizer.attach(this, _handle, detach: this);
   }
 
@@ -83,13 +75,11 @@ class MouseEvent {
   /// getter will return null after this call.
   void clearButton() => bindings.mouseEventClearButton(_handle);
 
-  /// Releases all resources associated with this mouse event.
+  /// Releases the native mouse event handle.
   ///
-  /// The event must not be used after this call. Safe to call multiple
-  /// times; subsequent calls are no-ops.
+  /// Must be called to free resources; the event must not be used
+  /// afterward.
   void dispose() {
-    if (_disposed) return;
-    _disposed = true;
     _finalizer.detach(this);
     bindings.mouseEventFree(_handle);
   }
@@ -98,6 +88,4 @@ class MouseEvent {
   void setPosition({required double x, required double y}) {
     bindings.mouseEventSetPosition(_handle, x, y);
   }
-
-  static int _create() => check(bindings.mouseEventNew());
 }

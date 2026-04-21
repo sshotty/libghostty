@@ -511,7 +511,6 @@ void main() {
             ...utf8.encode('CD'),
           ]),
         );
-        _terminal(controller).renderState.update();
       });
 
       testWidgets('drag from spacer snaps anchor inclusive', (tester) async {
@@ -676,7 +675,6 @@ void _enableMouseTracking(
     padding: EdgeInsets.zero,
     devicePixelRatio: 1.0,
   );
-  binding.terminal.renderState.update();
 }
 
 Future<TestGesture> _mouseDown(
@@ -693,5 +691,4 @@ Terminal _terminal(TerminalController controller) {
 
 void _writeToTerminal(TerminalController controller, String text) {
   _terminal(controller).write(Uint8List.fromList(utf8.encode(text)));
-  _terminal(controller).renderState.update();
 }

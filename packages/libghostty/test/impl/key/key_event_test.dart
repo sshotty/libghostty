@@ -80,11 +80,5 @@ void main() {
       expect(event.key, Key.b);
       expect(event.action, KeyAction.press);
     });
-
-    test('double dispose is safe', () {
-      final e = KeyEvent();
-      e.dispose();
-      e.dispose();
-    });
   });
 }

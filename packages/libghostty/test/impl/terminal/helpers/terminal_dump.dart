@@ -2,16 +2,27 @@ import 'package:libghostty/libghostty.dart';
 
 class TerminalDump {
   static List<String> screenContent(Terminal terminal) {
-    terminal.renderState.update();
-    final lines = <String>[];
-    while (terminal.renderState.nextRow()) {
-      final buffer = StringBuffer();
-      while (terminal.renderState.nextCell()) {
-        buffer.write(terminal.renderState.cell.content);
+    final rs = RenderState();
+    final rows = RowIterator();
+    final cells = CellIterator();
+    try {
+      rs.update(terminal);
+      final lines = <String>[];
+      rows.reset(rs);
+      while (rows.next()) {
+        final buffer = StringBuffer();
+        cells.reset(rows);
+        while (cells.next()) {
+          buffer.write(cells.content);
+        }
+        lines.add(buffer.toString());
       }
-      lines.add(buffer.toString());
+      return lines;
+    } finally {
+      cells.dispose();
+      rows.dispose();
+      rs.dispose();
     }
-    return lines;
   }
 
   static List<String> nonEmptyContent(Terminal terminal) {

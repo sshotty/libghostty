@@ -18,7 +18,6 @@ void main() {
 
     setUp(() {
       controller = TerminalControllerImpl();
-      controller.terminal.renderState.update();
     });
 
     tearDown(() => controller.dispose());
@@ -152,7 +151,6 @@ void main() {
       controller = TerminalControllerImpl(
         config: const TerminalConfig(cols: 20, rows: 5),
       );
-      controller.terminal.renderState.update();
       controller.writeUtf8('hello world');
 
       controller.selection = const TerminalSelection(
@@ -169,7 +167,6 @@ void main() {
       controller = TerminalControllerImpl(
         config: const TerminalConfig(cols: 20, rows: 5),
       );
-      controller.terminal.renderState.update();
       controller.writeUtf8('\x1b[31mhi\x1b[0m');
 
       controller.selection = const TerminalSelection(
@@ -194,7 +191,6 @@ void main() {
       controller = TerminalControllerImpl(
         config: const TerminalConfig(cols: 20, rows: 5),
       );
-      controller.terminal.renderState.update();
       controller.write(
         Uint8List.fromList([
           0xE6, 0x97, 0xA5, // 日
@@ -228,7 +224,6 @@ void main() {
         smallController = TerminalControllerImpl(
           config: const TerminalConfig(cols: 20, rows: 3),
         );
-        smallController.terminal.renderState.update();
       });
 
       tearDown(() => smallController.dispose());
@@ -295,7 +290,6 @@ void main() {
           config: const TerminalConfig(cols: 5, rows: 3),
         );
         addTearDown(wrapController.dispose);
-        wrapController.terminal.renderState.update();
         wrapController.writeUtf8('abcdefgh');
 
         wrapController.selectAll();
@@ -310,7 +304,6 @@ void main() {
           config: const TerminalConfig(cols: 5, rows: 3),
         );
         addTearDown(wrapController.dispose);
-        wrapController.terminal.renderState.update();
         wrapController.write(
           Uint8List.fromList([
             ...utf8.encode('A'),
@@ -506,7 +499,6 @@ void main() {
         controller = TerminalControllerImpl(
           config: const TerminalConfig(cols: 20, rows: 5),
         );
-        controller.terminal.renderState.update();
         controller.terminal.writeUtf8('hello world');
 
         (controller as TerminalViewBinding).selectWord(0, 1);
@@ -522,7 +514,6 @@ void main() {
         controller = TerminalControllerImpl(
           config: const TerminalConfig(cols: 20, rows: 5),
         );
-        controller.terminal.renderState.update();
         controller.terminal.writeUtf8('hello world');
 
         (controller as TerminalViewBinding).selectLine(0, .content);
@@ -536,7 +527,6 @@ void main() {
         controller = TerminalControllerImpl(
           config: const TerminalConfig(cols: 20, rows: 5),
         );
-        controller.terminal.renderState.update();
         controller.terminal.writeUtf8('hello');
 
         (controller as TerminalViewBinding).selectLine(0, .full);

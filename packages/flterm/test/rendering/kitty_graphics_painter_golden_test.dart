@@ -15,7 +15,7 @@ import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:libghostty/libghostty.dart'
-    show DecodedImage, LibGhostty, Terminal;
+    show DecodedImage, KittyGraphics, LibGhostty, Terminal;
 
 void main() {
   group('KittyGraphicsPainter golden', () {
@@ -123,7 +123,7 @@ void main() {
           Uint8List.fromList('\x1b_Gf=100,a=t,i=1;$payload\x1b\\'.codeUnits),
         );
 
-        final image = terminal.kittyGraphics!.image(1)!;
+        final image = KittyGraphics.of(terminal)!.image(1)!;
         expect(image.width, 64);
         expect(image.height, 64);
 

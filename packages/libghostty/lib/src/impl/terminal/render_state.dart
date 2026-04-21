@@ -6,7 +6,7 @@ enum DirtyState {
   clean,
 
   /// Some rows changed: renderer can redraw incrementally using per-row
-  /// dirty flags via [Row.dirty].
+  /// dirty flags via [RowIterator.dirty].
   partial,
 
   /// Global state changed (e.g. colors, cursor shape, screen switch):
@@ -23,6 +23,18 @@ enum DirtyState {
 /// Stateful render snapshot of a terminal's visible viewport, optimized for
 /// repeated updates and incremental redrawing of dirty regions.
 ///
+/// A [RenderState] holds one native snapshot handle and is reusable across
+/// frames. Pair it with pre-allocated [RowIterator] and [CellIterator]
+/// instances to walk the snapshot without per-frame allocation.
+///
+/// ## Lifecycle
+///
+/// Construct once, call [update] each frame to refresh the snapshot from a
+/// [Terminal], then iterate rows and cells using [RowIterator] / [CellIterator]
+/// bound with [RowIterator.reset] / [CellIterator.reset]. After rendering,
+/// clear the per-row dirty flags via [RowIterator.dirty] and set [dirty] back
+/// to [DirtyState.clean]. When done with the state entirely, call [dispose].
+///
 /// The key design principle is that the render state only needs access to the
 /// [Terminal] during the [update] call. Between updates, all data can be read
 /// without holding any lock on the terminal, enabling safe multi-threaded
@@ -31,61 +43,46 @@ enum DirtyState {
 /// ## Dirty Tracking
 ///
 /// Dirty state is tracked at two independent layers: a global [dirty] state
-/// and per-row flags via [Row.dirty]. The [update] call sets these but does
-/// not clear them. The caller must manage both layers by calling
-/// [markClean] after rendering. Setting one layer does not affect the other.
+/// and per-row flags via [RowIterator.dirty]. [update] sets these but does
+/// not clear them. After rendering, set [dirty] back to [DirtyState.clean]
+/// and clear each processed row's flag via [RowIterator.dirty].
 ///
 /// ```dart
-/// final dirty = renderState.update();
-/// if (dirty != DirtyState.clean) {
-///   while (renderState.nextRow()) {
-///     if (dirty == DirtyState.full || renderState.row.dirty) {
-///       while (renderState.nextCell()) {
-///         drawCell(renderState.cell);
-///       }
+/// final renderState = RenderState();
+/// final rows = RowIterator();
+/// final cells = CellIterator();
+///
+/// void renderFrame(Terminal terminal) {
+///   final dirty = renderState.update(terminal);
+///   if (dirty == DirtyState.clean) return;
+///
+///   rows.reset(renderState);
+///   while (rows.next()) {
+///     if (dirty == DirtyState.partial && !rows.dirty) continue;
+///     cells.reset(rows);
+///     while (cells.next()) {
+///       drawCell(cells.col, rows.index, cells.codepoint, cells.style);
 ///     }
+///     rows.dirty = false;
 ///   }
-///   renderState.markClean();
+///   renderState.dirty = DirtyState.clean;
 /// }
 /// ```
-class RenderState {
-  static final _finalizer = Finalizer<_Handles>((handle) {
-    bindings.rowCellsFree(handle.rowCells);
-    bindings.rowIteratorFree(handle.rowIterator);
-    bindings.renderStateFree(handle.handle);
-  });
+final class RenderState {
+  static final _finalizer = Finalizer<int>(bindings.renderStateFree);
 
   final int _handle;
-  final int _rowIterator;
-  final int _rowCells;
-  final int _terminalHandle;
-  var _disposed = false;
 
   var _dirty = DirtyState.clean;
   var _cols = 0;
   var _rows = 0;
-  var _rowStarted = false;
-  var _cellStarted = false;
 
-  /// The current [Row] in the iteration. Properties reflect the row at the
-  /// current iterator position. Only valid after calling [nextRow] and
-  /// before the next [update].
-  late final row = Row._(_rowIterator);
-
-  /// The current [Cell] in the iteration. Properties reflect the cell at
-  /// the current iterator position. Only valid after calling [nextCell]
-  /// and before the next [update].
-  late final cell = Cell._(_rowCells);
-
-  RenderState._(this._terminalHandle)
-    : _handle = _createHandle(bindings.renderStateNew),
-      _rowIterator = _createHandle(bindings.rowIteratorNew),
-      _rowCells = _createHandle(bindings.rowCellsNew) {
-    _finalizer.attach(
-      this,
-      _Handles(_handle, _rowIterator, _rowCells),
-      detach: this,
-    );
+  /// Creates an empty render state.
+  ///
+  /// Call [update] before reading any viewport data. Throws
+  /// [OutOfMemoryException] if the native allocation fails.
+  RenderState() : _handle = check(bindings.renderStateNew()) {
+    _finalizer.attach(this, _handle, detach: this);
   }
 
   /// Resolved color information from the last [update]: foreground,
@@ -136,120 +133,54 @@ class RenderState {
   /// Global dirty state from the last [update].
   DirtyState get dirty => _dirty;
 
+  /// Sets the global dirty state, typically to [DirtyState.clean] after a
+  /// frame has been rendered.
+  ///
+  /// Only affects the render-state-wide flag. Per-row dirty flags are
+  /// independent; clear them via [RowIterator.dirty] during (or after)
+  /// the render loop.
+  set dirty(DirtyState value) {
+    checkCode(
+      bindings.renderStateSetDirty(_handle, switch (value) {
+        DirtyState.clean => RenderStateDirty.false$,
+        DirtyState.partial => RenderStateDirty.partial,
+        DirtyState.full => RenderStateDirty.full,
+      }),
+    );
+    _dirty = value;
+  }
+
   /// Viewport height in cells from the last [update].
   int get rows => _rows;
 
-  /// Releases all resources held by this render state.
+  /// Releases the native render state handle.
   ///
-  /// Safe to call multiple times; subsequent calls are no-ops.
+  /// Must be called to free resources; the render state must not be used
+  /// afterward.
   void dispose() {
-    if (_disposed) return;
-    _disposed = true;
     _finalizer.detach(this);
-    bindings.rowCellsFree(_rowCells);
-    bindings.rowIteratorFree(_rowIterator);
     bindings.renderStateFree(_handle);
   }
 
-  /// Resets both global and per-row dirty flags to clean.
+  /// Snapshots [terminal]'s state and consumes its dirty flag.
   ///
-  /// Call this after rendering a frame. Iterates all rows to clear their
-  /// individual dirty flags, then sets the global dirty state to
-  /// [DirtyState.clean].
-  void markClean() {
-    if (_dirty == DirtyState.clean) return;
-    checkCode(bindings.rowIteratorInit(_rowIterator, _handle));
-    while (bindings.rowIteratorNext(_rowIterator)) {
-      checkCode(bindings.rowIteratorSetDirty(_rowIterator, dirty: false));
-    }
-    checkCode(bindings.renderStateSetDirty(_handle, RenderStateDirty.false$));
-    _dirty = DirtyState.clean;
-    _rowStarted = false;
-  }
-
-  /// Advances to the next cell in the current row.
+  /// After this call, all render state properties ([cols], [rows], [colors],
+  /// [cursor]) reflect the terminal's current state, and [dirty] indicates
+  /// what changed. Does not clear this render state's own dirty tracking;
+  /// after rendering, set [dirty] to [DirtyState.clean] and clear per-row
+  /// flags via [RowIterator.dirty] during the render loop.
   ///
-  /// Returns true if the iterator moved to a valid cell; false if no more
-  /// cells remain. Read cell data from [cell] after this returns true.
-  bool nextCell() {
-    if (!_cellStarted) {
-      _cellStarted = true;
-      checkCode(bindings.rowCellsInit(_rowCells, _rowIterator));
-    }
-    return cell._advance();
-  }
-
-  /// Advances to the next row in the viewport.
-  ///
-  /// Returns true if the iterator moved to a valid row; false if no more
-  /// rows remain. Read row data from [row] after this returns true, then
-  /// iterate cells with [nextCell].
-  bool nextRow() {
-    if (!_rowStarted) {
-      _rowStarted = true;
-      checkCode(bindings.rowIteratorInit(_rowIterator, _handle));
-    }
-    final hasNext = bindings.rowIteratorNext(_rowIterator);
-    if (hasNext) {
-      _cellStarted = false;
-      row._invalidate();
-    }
-    return hasNext;
-  }
-
-  /// Resets the row and cell iteration state so that [nextRow] starts from
-  /// the beginning again.
-  ///
-  /// Does not touch dirty flags or re-snapshot the terminal. Use this to
-  /// iterate the same snapshot multiple times (e.g. once for layout, once
-  /// for drawing).
-  void resetIteration() {
-    _rowStarted = false;
-    _cellStarted = false;
-  }
-
-  /// Positions the cell iterator at the given zero-based [col] in the
-  /// current row, so that [cell] properties reflect that column.
-  ///
-  /// Can be used instead of or mixed with [nextCell] for random access
-  /// within a row. Calling [nextCell] after [selectCell] advances from
-  /// the selected position. Only valid after [nextRow] returns true.
-  ///
-  /// Throws [InvalidValueException] if [col] is out of range.
-  void selectCell(int col) {
-    if (!_cellStarted) {
-      _cellStarted = true;
-      checkCode(bindings.rowCellsInit(_rowCells, _rowIterator));
-    }
-    checkCode(bindings.rowCellsSelect(_rowCells, col));
-    cell._refresh();
-  }
-
-  /// Snapshots the terminal state and consumes the terminal's dirty flag.
-  ///
-  /// After this call, all render state properties ([cols], [rows],
-  /// [colors], [cursor]) reflect the terminal's current state, and
-  /// [dirty] indicates what changed. Does not clear this render state's
-  /// own dirty tracking; call [markClean] after rendering.
+  /// Any [RowIterator] or [CellIterator] previously bound to this render
+  /// state must be rebound via [RowIterator.reset] / [CellIterator.reset]
+  /// before use.
   ///
   /// Throws [OutOfMemoryException] if updating requires allocation and
   /// that allocation fails.
-  DirtyState update() {
-    checkCode(bindings.renderStateUpdate(_handle, _terminalHandle));
+  DirtyState update(Terminal terminal) {
+    checkCode(bindings.renderStateUpdate(_handle, terminal._handle));
     _dirty = DirtyState._fromRaw(check(bindings.renderStateGetDirty(_handle)));
     _cols = check(bindings.renderStateGetCols(_handle));
     _rows = check(bindings.renderStateGetRows(_handle));
-    _rowStarted = false;
     return _dirty;
   }
-
-  static int _createHandle(CResult<int> Function() factory) => check(factory());
-}
-
-class _Handles {
-  final int handle;
-  final int rowIterator;
-  final int rowCells;
-
-  _Handles(this.handle, this.rowIterator, this.rowCells);
 }

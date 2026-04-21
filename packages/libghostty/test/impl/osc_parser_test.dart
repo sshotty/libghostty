@@ -59,10 +59,5 @@ void main() {
       expect(command.type, OscCommandType.reportPwd);
       expect(command.windowTitle, isNull);
     });
-
-    test('double dispose is safe', () {
-      parser.dispose();
-      parser.dispose();
-    });
   });
 }

@@ -198,6 +198,7 @@ class TerminalRenderBox extends RenderBox {
   late final GlyphAtlas _atlas;
   late final SpriteBuffer _sprites;
   late final SpriteBuilder _spriteBuilder;
+  final _renderState = RenderState();
 
   late final EmojiPainter _emojiPainter;
   late final CursorPainter _cursorPainter;
@@ -388,6 +389,8 @@ class TerminalRenderBox extends RenderBox {
     _atlas.dispose();
     _paintState.rows = 0;
     _paintState.cols = 0;
+    _spriteBuilder.dispose();
+    _renderState.dispose();
     super.detach();
   }
 
@@ -559,7 +562,7 @@ class TerminalRenderBox extends RenderBox {
     final effectiveCursor = col != cursor.col
         ? cursor.copyWith(col: col)
         : cursor;
-    final ref = _terminal.gridRefAt(col: col, row: cursor.row);
+    final ref = GridRef.at(_terminal, col: col, row: cursor.row);
     final cursorCell = CursorCell(ref.content, ref.style, wide: ref.isWide);
     ref.dispose();
 
@@ -659,8 +662,7 @@ class TerminalRenderBox extends RenderBox {
       _needsContentSync = false;
       _needsSpriteRebuild = false;
 
-      final renderState = _terminal.renderState;
-      renderState.update();
+      _renderState.update(_terminal);
 
       final scrollbar = _terminal.scrollbar;
       _paintState.viewportOffset = scrollbar.offset;
@@ -674,16 +676,13 @@ class TerminalRenderBox extends RenderBox {
       _paintState.cursorColorArgb =
           _terminal.cursorColor?.toArgb32 ?? _paintState.terminalForegroundArgb;
 
-      _spriteBuilder.build(renderState);
-      renderState.markClean();
+      _spriteBuilder.build(_renderState);
+      _renderState.dirty = DirtyState.clean;
 
-      _resolveCursor(renderState, scrollbar);
+      _resolveCursor(_renderState, scrollbar);
     } else if (_needsSpriteRebuild) {
       _needsSpriteRebuild = false;
-
-      final renderState = _terminal.renderState;
-      renderState.resetIteration();
-      _spriteBuilder.build(renderState);
+      _spriteBuilder.build(_renderState);
     }
 
     _syncKittyPlacements();
@@ -691,7 +690,7 @@ class TerminalRenderBox extends RenderBox {
 
   void _syncKittyPlacements() {
     _kittyPlacements.clear();
-    final graphics = _terminal.kittyGraphics;
+    final graphics = KittyGraphics.of(_terminal);
     if (graphics == null) return;
 
     final cellWidth = _paintState.metrics.cellWidth;

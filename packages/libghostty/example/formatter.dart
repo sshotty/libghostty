@@ -8,7 +8,7 @@ void main() {
   terminal.write(Uint8List.fromList('Hello, terminal!\r\n'.codeUnits));
   terminal.write(Uint8List.fromList('\x1b[1mBold text\x1b[m\r\n'.codeUnits));
 
-  final formatter = terminal.createFormatter(format: .plain, trim: true);
+  final formatter = Formatter(terminal: terminal, format: .plain, trim: true);
   print(formatter.format());
   formatter.dispose();
 
