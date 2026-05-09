@@ -8,7 +8,7 @@ import 'dart:ui';
 ///
 /// Painters are stateless beyond pre-allocated [Paint] objects. All data
 /// comes from [TerminalPaintState] and [SpriteBuffer], which are populated
-/// by [SpriteBuilder] before painting begins.
+/// by the terminal frame builder before painting begins.
 abstract interface class TerminalPainter {
   void paint(Canvas canvas);
 }

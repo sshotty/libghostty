@@ -16,7 +16,7 @@ import 'terminal_painter.dart';
 /// the grid fill so the backdrop behind the repaint boundary layer
 /// shows through on default background cells; filling here would
 /// composite twice against that backdrop. Per-cell explicit background
-/// rects still render on top, with alpha scaled by [SpriteBuilder] when
+/// rects still render on top, with alpha scaled by the frame builder when
 /// [TerminalPaintState.backgroundOpacityCells] is true.
 class BackgroundPainter implements TerminalPainter {
   final Paint _fillPaint;

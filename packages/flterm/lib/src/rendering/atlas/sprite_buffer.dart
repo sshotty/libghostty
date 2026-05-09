@@ -375,8 +375,8 @@ class RectSprites {
 /// Assembled sprite data for all terminal visual layers, organized as
 /// fixed per-row slot ranges for incremental row-dirty rebuilds.
 ///
-/// Written by [SpriteBuilder] during the update phase. Read by painters
-/// during the paint phase. Dirty rows are rewritten via
+/// Written by the terminal frame builder during the update phase. Read by
+/// painters during the paint phase. Dirty rows are rewritten via
 /// [beginRow]/[endRow]; clean rows are left untouched across frames.
 /// [seal] packs each channel's active slots into tight buffers (atlas
 /// channels for [Canvas.drawRawAtlas], rect channels for

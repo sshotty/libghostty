@@ -347,7 +347,7 @@ final class TerminalTheme {
   final bool backgroundOpacityCells;
 
   /// [backgroundOpacity] precomputed as an alpha byte in 0 to 255, for
-  /// alpha scaling in the per-cell hot loop of the sprite builder.
+  /// alpha scaling in the per-cell hot loop of the frame builder.
   final int backgroundOpacityAlpha;
 
   TerminalTheme({
