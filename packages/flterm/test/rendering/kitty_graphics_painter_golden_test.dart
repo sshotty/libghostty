@@ -38,7 +38,6 @@ void main() {
           state: _stateFor(cols: 80, rows: 80),
           cache: cache,
           snapshots: snapshots,
-          layer: KittyPaintLayer.aboveText,
         );
 
         captured = await _paint(width: 80, height: 80, draw: painter.paint);
@@ -64,13 +63,15 @@ void main() {
           ),
         );
 
-        const snapshots = <KittyPlacementSnapshot>[
+        const belowSnapshots = <KittyPlacementSnapshot>[
           KittyPlacementSnapshot(
             imageId: 1,
             dst: Rect.fromLTWH(0, 0, 80, 80),
             src: Rect.fromLTWH(0, 0, 4, 4),
             z: -1,
           ),
+        ];
+        const aboveSnapshots = <KittyPlacementSnapshot>[
           KittyPlacementSnapshot(
             imageId: 2,
             dst: Rect.fromLTWH(40, 0, 40, 40),
@@ -83,14 +84,12 @@ void main() {
         final below = KittyGraphicsPainter(
           state: state,
           cache: cache,
-          snapshots: snapshots,
-          layer: KittyPaintLayer.belowText,
+          snapshots: belowSnapshots,
         );
         final above = KittyGraphicsPainter(
           state: state,
           cache: cache,
-          snapshots: snapshots,
-          layer: KittyPaintLayer.aboveText,
+          snapshots: aboveSnapshots,
         );
 
         captured = await _paint(
@@ -146,7 +145,6 @@ void main() {
           state: _stateFor(cols: 64, rows: 64),
           cache: cache,
           snapshots: snapshots,
-          layer: KittyPaintLayer.aboveText,
         );
 
         captured = await _paint(width: 64, height: 64, draw: painter.paint);

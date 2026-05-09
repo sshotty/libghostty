@@ -6,29 +6,21 @@ import '../kitty_image_cache.dart';
 import '../paint_state.dart';
 import 'terminal_painter.dart';
 
-/// Paints Kitty graphics placements for a single [KittyPaintLayer].
+/// Paints one ordered Kitty graphics placement list.
 ///
-/// One painter per layer is invoked at the corresponding stage of the
-/// renderer's paint pipeline. Each paint clips to the grid so off-grid
-/// placements never bleed past the terminal bounds.
-///
-/// [snapshots] is shared across the three layer painters and is
-/// expected to be sorted by z ascending; each painter filters by
-/// [layer] in a single pass.
+/// [TerminalPainterStack] splits placements by [KittyPaintLayer] before paint,
+/// so this painter only clips and draws the list it receives.
 class KittyGraphicsPainter implements TerminalPainter {
   final Paint _paint;
-  final KittyPaintLayer _layer;
   final KittyImageCache _cache;
   final TerminalPaintState _state;
   final List<KittyPlacementSnapshot> _snapshots;
 
   KittyGraphicsPainter({
-    required KittyPaintLayer layer,
     required KittyImageCache cache,
     required TerminalPaintState state,
     required List<KittyPlacementSnapshot> snapshots,
-  }) : _layer = layer,
-       _cache = cache,
+  }) : _cache = cache,
        _state = state,
        _snapshots = snapshots,
        _paint = Paint()..filterQuality = .low;
@@ -43,8 +35,6 @@ class KittyGraphicsPainter implements TerminalPainter {
     canvas.save();
     canvas.clipRect(Rect.fromLTWH(0, 0, width, height));
     for (final snap in _snapshots) {
-      if (KittyPaintLayer.forZ(snap.z) != _layer) continue;
-
       final cached = _cache.lookupById(snap.imageId);
       if (cached is! KittyImageReady) continue;
 

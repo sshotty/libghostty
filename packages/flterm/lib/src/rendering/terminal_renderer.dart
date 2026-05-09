@@ -4,29 +4,16 @@ import 'package:libghostty/libghostty.dart';
 
 import '../foundation.dart';
 import 'atlas/atlas_config.dart';
-import 'atlas/sprite_buffer.dart';
-import 'cursor_atlas_resolver.dart';
-import 'kitty_image_cache.dart';
 import 'paint_state.dart';
-import 'painters/background_painter.dart';
-import 'painters/cursor_painter.dart';
-import 'painters/decoration_painter.dart';
-import 'painters/emoji_painter.dart';
-import 'painters/kitty_graphics_painter.dart';
-import 'painters/sprite_painter.dart';
-import 'painters/terminal_text_painter.dart';
-import 'painters/underline_painter.dart';
-import 'sprite_builder.dart';
 import 'terminal_render_cache.dart';
+import 'terminal_render_pipeline.dart';
 
 /// Renders a terminal screen with cell backgrounds, styled text, cursors,
 /// and selection overlays.
 ///
 /// This is the core rendering widget used internally by [TerminalView].
 /// It owns a [TerminalRenderBox] that orchestrates layout (grid sizing,
-/// terminal resize), state sync (reading cells, building sprites), and
-/// painting (six painters in z-order: background, text, cursor, emoji,
-/// decorations, selection).
+/// terminal resize), frame sync, and a paint stack.
 ///
 /// Sizing is determined by the parent constraints and cell metrics: the
 /// widget computes how many columns and rows fit, then sizes itself to
@@ -162,14 +149,11 @@ class TerminalRenderer extends LeafRenderObjectWidget {
 ///
 /// 2. **Sync** (start of paint): snapshots terminal cells, resolves colors
 ///    (including OSC 10/11 overrides, bold-is-bright, inverse, faint),
-///    builds sprite data for text/backgrounds/decorations, resolves
+///    builds frame data for text/backgrounds/decorations, resolves
 ///    the cursor cell glyph, and collects Kitty graphics placements.
 ///
-/// 3. **Paint**: delegates to painters in z-order: kitty-below-bg,
-///    background, kitty-below-text, underlines, text, cursor, emoji,
-///    decorations, kitty-above-text, selection. Each painter reads
-///    only from pre-built sprite data and cached images, with zero
-///    terminal access.
+/// 3. **Paint**: delegates to a paint stack that owns painter instances,
+///    Kitty image snapshots, and z-order.
 ///
 /// Created and managed by [TerminalRenderer]. Not intended for direct use.
 class TerminalRenderBox extends RenderBox {
@@ -180,30 +164,12 @@ class TerminalRenderBox extends RenderBox {
   TerminalRenderCache _renderCache;
   late TerminalAtlasHandle _atlasHandle;
   var _performingLayout = false;
-  var _needsContentSync = false;
+  var _needsFrameSync = false;
   var _stickToBottom = true;
   var _lastScrollbackRows = 0;
-  var _lastCursor = const Cursor();
-  CursorCell? _lastCursorCell;
 
-  late final SpriteBuffer _sprites;
-  late SpriteBuilder _spriteBuilder;
-  late CursorAtlasResolver _cursorAtlasResolver;
-  final _renderState = RenderState();
-
-  late EmojiPainter _emojiPainter;
-  late CursorPainter _cursorPainter;
-  late SpritePainter _spritePainter;
-  late TerminalTextPainter _textPainter;
-  late UnderlinePainter _underlinePainter;
   late final TerminalPaintState _paintState;
-  late final BackgroundPainter _backgroundPainter;
-  late final DecorationPainter _decorationPainter;
-  late final KittyImageCache _kittyImageCache;
-  late final KittyGraphicsPainter _kittyBelowBgPainter;
-  late final KittyGraphicsPainter _kittyBelowTextPainter;
-  late final KittyGraphicsPainter _kittyAbovePainter;
-  final List<KittyPlacementSnapshot> _kittyPlacements = [];
+  late final TerminalRenderPipeline _pipeline;
 
   TerminalRenderBox({
     required Terminal terminal,
@@ -230,31 +196,14 @@ class TerminalRenderBox extends RenderBox {
         devicePixelRatio: _currentDevicePixelRatio,
       ),
     );
-    _sprites = SpriteBuffer();
-    _bindAtlasDependents();
-    _decorationPainter = DecorationPainter(_sprites);
-    _backgroundPainter = BackgroundPainter(_paintState, _sprites);
-    _kittyImageCache = KittyImageCache(onImageReady: markNeedsPaint);
-    _kittyBelowBgPainter = KittyGraphicsPainter(
+    final atlas = _atlasHandle.atlas;
+    _pipeline = TerminalRenderPipeline(
+      atlas: atlas,
       state: _paintState,
-      cache: _kittyImageCache,
-      snapshots: _kittyPlacements,
-      layer: KittyPaintLayer.belowBg,
-    );
-    _kittyBelowTextPainter = KittyGraphicsPainter(
-      state: _paintState,
-      cache: _kittyImageCache,
-      snapshots: _kittyPlacements,
-      layer: KittyPaintLayer.belowText,
-    );
-    _kittyAbovePainter = KittyGraphicsPainter(
-      state: _paintState,
-      cache: _kittyImageCache,
-      snapshots: _kittyPlacements,
-      layer: KittyPaintLayer.aboveText,
+      onImageReady: markNeedsPaint,
     );
 
-    _applyThemeColors();
+    _applyTerminalThemeColors();
   }
 
   bool get blinkVisible => _paintState.blinkVisible;
@@ -262,7 +211,8 @@ class TerminalRenderBox extends RenderBox {
   set blinkVisible(bool value) {
     if (_paintState.blinkVisible == value) return;
     _paintState.blinkVisible = value;
-    _spriteBuilder.dirtyRows.markAll();
+    _pipeline.markAllRowsDirty();
+    _pipeline.refreshCursorGlyph();
     markNeedsPaint();
   }
 
@@ -298,10 +248,7 @@ class TerminalRenderBox extends RenderBox {
 
     _renderCache = value;
     final atlasChanged = _acquireAtlasForCurrentConfig(force: true);
-    if (atlasChanged) {
-      _spriteBuilder.dirtyRows.markAll();
-      _markTerminalDirty();
-    }
+    if (atlasChanged) _markFrameDirty();
   }
 
   set terminal(Terminal value) {
@@ -309,8 +256,8 @@ class TerminalRenderBox extends RenderBox {
     if (attached) _terminal.removeListener(_onTerminalChanged);
     _terminal = value;
     if (attached) _terminal.addListener(_onTerminalChanged);
-    _applyThemeColors();
-    _needsContentSync = true;
+    _applyTerminalThemeColors();
+    _needsFrameSync = true;
     markNeedsLayout();
   }
 
@@ -331,8 +278,9 @@ class TerminalRenderBox extends RenderBox {
         oldTheme.fontFamily != value.fontFamily ||
         !_listEquals(oldTheme.fontFamilyFallback, value.fontFamilyFallback);
     _paintState.updateTheme(value);
-    _applyThemeColors();
-    _needsContentSync = true;
+    _applyTerminalThemeColors();
+    _pipeline.markAllRowsDirty();
+    _needsFrameSync = true;
 
     if (fontChanged) {
       markNeedsLayout();
@@ -389,12 +337,9 @@ class TerminalRenderBox extends RenderBox {
 
   @override
   void dispose() {
-    _kittyImageCache.dispose();
     _paintState.rows = 0;
     _paintState.cols = 0;
-    _spriteBuilder.dispose();
-    _sprites.dispose();
-    _renderState.dispose();
+    _pipeline.dispose();
     _atlasHandle.release();
     super.dispose();
   }
@@ -404,26 +349,13 @@ class TerminalRenderBox extends RenderBox {
 
   @override
   void paint(PaintingContext context, Offset offset) {
-    _syncTerminalState();
+    _syncFrameState();
 
     final canvas = context.canvas;
 
     canvas.save();
     canvas.translate(offset.dx, offset.dy);
-    _kittyBelowBgPainter.paint(canvas);
-    _backgroundPainter.paint(canvas);
-    _kittyBelowTextPainter.paint(canvas);
-    // Underlines drawn before text so descender glyphs cover the underline
-    // at intersections.
-    _underlinePainter.paint(canvas);
-    _textPainter.paint(canvas);
-    _spritePainter.paint(canvas);
-    _cursorPainter.paint(canvas);
-    _emojiPainter.paint(canvas);
-    // Strikethrough and overline drawn after text so strikethrough visibly
-    // crosses through glyphs.
-    _decorationPainter.paint(canvas);
-    _kittyAbovePainter.paint(canvas);
+    _pipeline.paint(canvas);
     canvas.restore();
   }
 
@@ -452,7 +384,7 @@ class TerminalRenderBox extends RenderBox {
       _paintState.rows = newRows;
       _paintState.devicePixelRatio = dpr;
       if (newCols > 0 && newRows > 0) {
-        _spriteBuilder.configure(newRows, newCols);
+        _pipeline.configureGrid(newRows, newCols);
         // Cell size is reported in physical pixels so size-report
         // escapes and Kitty graphics geometry match a native terminal
         // at the same DPI.
@@ -470,18 +402,16 @@ class TerminalRenderBox extends RenderBox {
 
     _syncScrollLayout();
 
-    // Grid or atlas changes invalidate every row's sprite slot layout
-    // (grid) or atlas rect references (atlas), so re-emit every row on
-    // the next paint. Sub-cell pixel resize steps skip the work.
-    if (gridChanged || atlasReconfigured) {
-      _spriteBuilder.dirtyRows.markAll();
-      _markTerminalDirty();
-    }
+    // Grid changes invalidate every row's sprite slot layout. Atlas
+    // rebinding invalidates atlas references inside the pipeline.
+    if (gridChanged) _pipeline.markAllRowsDirty();
+
+    if (gridChanged || atlasReconfigured) _markFrameDirty();
 
     _performingLayout = false;
   }
 
-  void _applyThemeColors() {
+  void _applyTerminalThemeColors() {
     _terminal.foreground = _paintState.theme.foreground.toRgbColor();
     _terminal.background = _paintState.theme.background.toRgbColor();
     // Sentinel cursor colors (cellForeground/cellBackground) can't be
@@ -503,28 +433,10 @@ class TerminalRenderBox extends RenderBox {
     if (!force && config == _atlasHandle.config) return false;
 
     final previousHandle = _atlasHandle;
-    final previousBuilder = _spriteBuilder;
-
     _atlasHandle = _renderCache.acquireAtlas(config);
-    _bindAtlasDependents();
-    if (_paintState.rows > 0 && _paintState.cols > 0) {
-      _spriteBuilder.configure(_paintState.rows, _paintState.cols);
-    }
-
-    previousBuilder.dispose();
+    _pipeline.bindAtlas(_atlasHandle.atlas);
     previousHandle.release();
     return true;
-  }
-
-  void _bindAtlasDependents() {
-    final atlas = _atlasHandle.atlas;
-    _spriteBuilder = SpriteBuilder(atlas, _sprites, _paintState);
-    _cursorAtlasResolver = CursorAtlasResolver(atlas);
-    _textPainter = TerminalTextPainter(atlas, _sprites.wide, _sprites.regular);
-    _spritePainter = SpritePainter(atlas, _sprites);
-    _cursorPainter = CursorPainter(_paintState, atlas);
-    _emojiPainter = EmojiPainter(atlas, _sprites);
-    _underlinePainter = UnderlinePainter(atlas, _sprites);
   }
 
   double get _currentDevicePixelRatio {
@@ -545,8 +457,8 @@ class TerminalRenderBox extends RenderBox {
     return true;
   }
 
-  void _markTerminalDirty() {
-    _needsContentSync = true;
+  void _markFrameDirty() {
+    _needsFrameSync = true;
     markNeedsPaint();
   }
 
@@ -556,19 +468,18 @@ class TerminalRenderBox extends RenderBox {
     _paintState.selection = newSelection;
     _paintState.cursorFocused = _renderObserver.hasFocus;
     if (previousSelection != newSelection) {
-      _markSelectionRowsDirty(previousSelection);
-      _markSelectionRowsDirty(newSelection);
+      final viewportOffset = _terminal.scrollbar.offset;
+      _pipeline.markSelectionRowsDirty(
+        previousSelection,
+        viewportOffset: viewportOffset,
+      );
+      _pipeline.markSelectionRowsDirty(
+        newSelection,
+        viewportOffset: viewportOffset,
+      );
     }
-    _resolveCursorGlyph();
+    _pipeline.refreshCursorGlyph();
     markNeedsPaint();
-  }
-
-  void _markSelectionRowsDirty(TerminalSelection? selection) {
-    if (selection == null || _paintState.rows == 0) return;
-    final viewportOffset = _terminal.scrollbar.offset;
-    final top = selection.topRow - viewportOffset;
-    final bottom = selection.bottomRow - viewportOffset;
-    _spriteBuilder.dirtyRows.markRange(top, bottom + 1);
   }
 
   void _onScroll() {
@@ -591,7 +502,7 @@ class TerminalRenderBox extends RenderBox {
     if (delta == 0) return;
 
     _terminal.scrollViewport(delta);
-    _markTerminalDirty();
+    _markFrameDirty();
   }
 
   // Handles terminal change notifications.
@@ -603,110 +514,12 @@ class TerminalRenderBox extends RenderBox {
     if (_paintState.rows == 0 || _performingLayout) return;
 
     if (_terminal.scrollbackRows != _lastScrollbackRows) {
-      _needsContentSync = true;
+      _needsFrameSync = true;
       markNeedsLayout();
       return;
     }
 
-    _markTerminalDirty();
-  }
-
-  void _resolveCursor(RenderState renderState, Scrollbar scrollbar) {
-    final cursor = renderState.cursor;
-    final scrollbackLen = scrollbar.total - scrollbar.visible;
-    final inViewport =
-        cursor.visible &&
-        (scrollbackLen <= 0 || scrollbar.offset >= scrollbackLen) &&
-        cursor.row >= 0 &&
-        cursor.row < _paintState.rows &&
-        cursor.col >= 0 &&
-        cursor.col < _paintState.cols;
-
-    if (!inViewport) {
-      _lastCursor = cursor;
-      _lastCursorCell = null;
-      _paintState.cursor = cursor.copyWith(visible: false);
-      _paintState.cursorWide = false;
-      _paintState.cursorAtlasEntry = null;
-      return;
-    }
-
-    final adjustedCursor = cursor.wideTail && cursor.col > 0
-        ? cursor.copyWith(col: cursor.col - 1)
-        : cursor;
-    final effectiveCursor = adjustedCursor.shape == CursorShape.block
-        ? adjustedCursor.copyWith(shape: _paintState.theme.cursor.shape)
-        : adjustedCursor;
-    final ref = GridRef.at(
-      _terminal,
-      col: effectiveCursor.col,
-      row: effectiveCursor.row,
-    );
-    final cursorCell = CursorCell(ref.content, ref.style, wide: ref.isWide);
-    ref.dispose();
-
-    _lastCursor = effectiveCursor;
-    _lastCursorCell = cursorCell;
-    _paintState.cursor = effectiveCursor;
-    _paintState.cursorWide = cursorCell.wide;
-    _resolveCursorFillColor(cursorCell);
-    _resolveCursorGlyph();
-  }
-
-  // An OSC 12 color reported by libghostty overrides the theme cursor color.
-  void _resolveCursorFillColor(CursorCell? cell) {
-    final osc = _terminal.cursorColor;
-    if (osc != null) {
-      _paintState.cursorColorArgb = osc.toArgb32;
-      return;
-    }
-    final themeCursor = _paintState.theme.cursor.color;
-    if (themeCursor == null) {
-      _paintState.cursorColorArgb = _paintState.terminalForegroundArgb;
-      return;
-    }
-    final (cellFg, cellBg) = _resolveCellColors(cell);
-    _paintState.cursorColorArgb = themeCursor
-        .resolve(cellForeground: cellFg, cellBackground: cellBg)
-        .toARGB32();
-  }
-
-  (Color, Color) _resolveCellColors(CursorCell? cell) {
-    final theme = _paintState.theme;
-    if (cell == null) return (theme.foreground, theme.background);
-    var fg = theme.resolveColor(cell.style.foreground, isForeground: true);
-    var bg = theme.resolveColor(cell.style.background, isForeground: false);
-    if (cell.style.inverse) (fg, bg) = (bg, fg);
-    return (fg, bg);
-  }
-
-  // Builds the block cursor glyph from cached cursor cell data.
-  // Called after cursor resolution and on focus changes.
-  void _resolveCursorGlyph() {
-    final cell = _lastCursorCell;
-    final entry = _cursorAtlasResolver.resolve(
-      cell: cell,
-      shape: _lastCursor.shape,
-      focused: _paintState.cursorFocused,
-      blinkVisible: _paintState.blinkVisible,
-    );
-    _paintState.cursorAtlasEntry = entry;
-    if (entry == null || cell == null) return;
-
-    // The character under a block cursor paints in [CursorTheme.text] (or
-    // the terminal background when unset) so it contrasts with the cursor
-    // fill, matching standard terminal invert-on-cursor behavior.
-    final (cellFg, cellBg) = _resolveCellColors(cell);
-    final glyphColor =
-        _paintState.theme.cursor.text?.resolve(
-          cellForeground: cellFg,
-          cellBackground: cellBg,
-        ) ??
-        Color(_paintState.terminalBackgroundArgb);
-    _paintState.cursorGlyphPaint.colorFilter = ColorFilter.mode(
-      glyphColor,
-      BlendMode.modulate,
-    );
+    _markFrameDirty();
   }
 
   // Maintains scroll position and content dimensions.
@@ -748,87 +561,13 @@ class TerminalRenderBox extends RenderBox {
     _stickToBottom = maxExtent <= 0 || _offset.pixels >= maxExtent - cellHeight;
   }
 
-  // Reads terminal state and builds sprites for the current frame. The
-  // build runs when libghostty reports any change OR when a flterm-side
-  // source (selection, blink, atlas reconfigure, layout) has marked
-  // rows dirty via [_spriteBuilder.dirtyRows].
-  void _syncTerminalState() {
+  // Syncs terminal state into paint-ready frame buffers.
+  void _syncFrameState() {
     if (_paintState.rows == 0) return;
 
-    final dirtyRows = _spriteBuilder.dirtyRows;
-    if (_needsContentSync) {
-      _needsContentSync = false;
-
-      final dirty = _renderState.update(_terminal);
-
-      final scrollbar = _terminal.scrollbar;
-      _paintState.viewportOffset = scrollbar.offset;
-
-      _paintState.terminalForegroundArgb =
-          _terminal.foreground?.toArgb32 ??
-          _paintState.theme.foreground.toARGB32();
-      _paintState.terminalBackgroundArgb =
-          _terminal.background?.toArgb32 ??
-          _paintState.theme.background.toARGB32();
-
-      if (dirty != .clean || dirtyRows.anyDirty) {
-        _spriteBuilder.build(_renderState, dirty: dirty);
-        _renderState.dirty = .clean;
-      }
-
-      _resolveCursor(_renderState, scrollbar);
-    } else if (dirtyRows.anyDirty) {
-      _spriteBuilder.build(_renderState, dirty: .partial);
-    }
-
-    _syncKittyPlacements();
-  }
-
-  void _syncKittyPlacements() {
-    _kittyPlacements.clear();
-    final graphics = KittyGraphics.of(_terminal);
-    if (graphics == null) return;
-
-    final cellWidth = _paintState.metrics.cellWidth;
-    final cellHeight = _paintState.metrics.cellHeight;
-    // Placement geometry is reported in physical pixels, matching the
-    // cell size we report at resize. Convert back to logical pixels for
-    // the Flutter canvas.
-    final dpr = _paintState.devicePixelRatio;
-    final liveIds = <int>{};
-    for (final placement in graphics.placements()) {
-      final info = placement.renderInfo;
-      if (!info.viewportVisible) continue;
-      if (info.pixelWidth == 0 || info.pixelHeight == 0) continue;
-
-      final image = graphics.image(placement.imageId);
-      if (image == null) continue;
-      liveIds.add(placement.imageId);
-      _kittyImageCache.lookup(image);
-
-      _kittyPlacements.add(
-        KittyPlacementSnapshot(
-          imageId: placement.imageId,
-          dst: Rect.fromLTWH(
-            info.viewportCol * cellWidth + placement.xOffset / dpr,
-            info.viewportRow * cellHeight + placement.yOffset / dpr,
-            info.pixelWidth / dpr,
-            info.pixelHeight / dpr,
-          ),
-          src: Rect.fromLTWH(
-            info.sourceX.toDouble(),
-            info.sourceY.toDouble(),
-            info.sourceWidth.toDouble(),
-            info.sourceHeight.toDouble(),
-          ),
-          z: placement.z,
-        ),
-      );
-    }
-    // Sort once so each layer painter can filter in a single pass.
-    // Equal-z placements keep storage iteration order.
-    _kittyPlacements.sort((a, b) => a.z.compareTo(b.z));
-    _kittyImageCache.evict(liveIds);
+    final terminalDirty = _needsFrameSync;
+    _needsFrameSync = false;
+    _pipeline.sync(_terminal, terminalDirty: terminalDirty);
   }
 }
 
