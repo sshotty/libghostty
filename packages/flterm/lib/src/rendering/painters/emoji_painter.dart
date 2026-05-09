@@ -20,8 +20,8 @@ class EmojiPainter implements TerminalPainter {
 
   @override
   void paint(Canvas canvas) {
-    final image = _atlas.image;
     final emoji = _sprites.emoji;
+    final image = _atlas.emojiImage;
     if (image == null || !emoji.hasSprites) return;
     canvas.drawRawAtlas(
       image,

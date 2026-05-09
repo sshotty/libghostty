@@ -24,7 +24,7 @@ class TerminalTextPainter implements TerminalPainter {
 
   @override
   void paint(Canvas canvas) {
-    final image = _atlas.image;
+    final image = _atlas.textImage;
     if (image == null) return;
 
     if (_regular.hasSprites) {

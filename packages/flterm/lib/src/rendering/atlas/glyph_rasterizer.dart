@@ -26,9 +26,17 @@ class GlyphRasterizer {
     int maxSize = GlyphAtlasTexture.defaultMaxSize,
   }) : _texture = GlyphAtlasTexture(initialSize: initialSize, maxSize: maxSize);
 
+  Image? get decorationImage => _texture.image;
+
+  Image? get emojiImage => _texture.image;
+
   Image? get image => _texture.image;
 
+  Image? get spriteImage => _texture.image;
+
   GlyphSpriteRasterizer get spriteRasterizer => _sprites;
+
+  Image? get textImage => _texture.image;
 
   GlyphTextRasterizer get textRasterizer => _text;
 

@@ -24,6 +24,15 @@ void main() {
         expect(atlas.image, isNotNull);
       });
 
+      test('lane image accessors expose the shared atlas texture', () {
+        final image = atlas.image;
+
+        expect(atlas.textImage, same(image));
+        expect(atlas.emojiImage, same(image));
+        expect(atlas.spriteImage, same(image));
+        expect(atlas.decorationImage, same(image));
+      });
+
       test('defers preseed when cell dimensions are not available', () {
         atlas.dispose();
         atlas = GlyphAtlas(

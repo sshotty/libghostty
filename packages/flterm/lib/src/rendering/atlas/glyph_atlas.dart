@@ -38,9 +38,17 @@ class GlyphAtlas {
 
   int get cacheSize => _cache.size;
 
+  Image? get decorationImage => _rasterizer.decorationImage;
+
   double get devicePixelRatio => _config.devicePixelRatio;
 
+  Image? get emojiImage => _rasterizer.emojiImage;
+
   Image? get image => _rasterizer.image;
+
+  Image? get spriteImage => _rasterizer.spriteImage;
+
+  Image? get textImage => _rasterizer.textImage;
 
   /// Dispatches to [addEmoji] when [emoji] is true, otherwise [addText].
   ///

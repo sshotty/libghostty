@@ -21,7 +21,7 @@ class UnderlinePainter implements TerminalPainter {
 
   @override
   void paint(Canvas canvas) {
-    final image = _atlas.image;
+    final image = _atlas.decorationImage;
     final underline = _sprites.underline;
     if (image == null || !underline.hasSprites) return;
     canvas.drawRawAtlas(
