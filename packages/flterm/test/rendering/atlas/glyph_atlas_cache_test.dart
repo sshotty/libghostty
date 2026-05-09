@@ -5,6 +5,7 @@ import 'package:flterm/src/rendering/atlas/glyph_atlas_cache.dart';
 import 'package:flterm/src/rendering/atlas/glyph_atlas_config.dart';
 import 'package:flterm/src/rendering/atlas/glyph_rasterizer.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:libghostty/libghostty.dart';
 
 void main() {
   group('GlyphAtlasCache', () {
@@ -38,12 +39,37 @@ void main() {
       expect(cache.size, 1);
     });
 
+    test('shares text and emoji entries for matching keys', () {
+      const key = (text: '\u{1F600}', bold: false, italic: false);
+
+      final text = cache.addText(key);
+      final emoji = cache.addEmoji(key);
+
+      expect(emoji, same(text));
+      expect(cache.size, 1);
+    });
+
     test('sprite codepoints are independent from text style', () {
       final plain = cache.addCodepoint(0x2500, bold: false, italic: false);
       final styled = cache.addCodepoint(0x2500, bold: true, italic: true);
 
       expect(styled, same(plain));
       expect(cache.size, 1);
+    });
+
+    test('sprite and text lanes keep separate entries', () {
+      final text = cache.addText((text: '\u2500', bold: false, italic: false));
+      final sprite = cache.addCodepoint(0x2500, bold: false, italic: false);
+
+      expect(sprite, isNot(same(text)));
+      expect(cache.size, 2);
+    });
+
+    test('shares decoration entries for matching styles', () {
+      final first = cache.addDecoration(UnderlineStyle.single);
+      final second = cache.addDecoration(UnderlineStyle.single);
+
+      expect(second, same(first));
     });
 
     test('clear removes cached entries', () {
@@ -53,6 +79,20 @@ void main() {
       cache.clear();
 
       expect(cache.size, 0);
+    });
+
+    test('preseedCommonGlyphs delegates common preseed work to lanes', () {
+      cache.preseedCommonGlyphs();
+
+      expect(cache.size, greaterThan(94 * 4));
+      final ascii = cache.addCodepoint(0x41, bold: false, italic: false);
+      final sprite = cache.addCodepoint(0x2500, bold: false, italic: false);
+      final decoration = cache.addDecoration(UnderlineStyle.single);
+
+      expect(ascii, isNotNull);
+      expect(sprite, isNotNull);
+      expect(decoration, isNotNull);
+      expect(cache.size, greaterThan(94 * 4));
     });
   });
 }

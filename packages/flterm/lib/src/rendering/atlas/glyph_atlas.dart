@@ -13,11 +13,9 @@ export 'glyph_entry.dart';
 
 /// Glyph cache backed by a [GlyphRasterizer] atlas texture.
 ///
-/// Caches rasterized glyphs by [TextGlyphKey] for text/emoji runs and by
-/// codepoint for the single-codepoint fast path. On first use with new
-/// cell dimensions, pre-seeds all printable ASCII (0x21-0x7E) in every
-/// bold/italic combination, the entire built-in sprite registry, and every
-/// underline decoration style.
+/// Caches rasterized text, emoji, sprite, and decoration glyphs. On first
+/// use with new cell dimensions, pre-seeds common glyphs so steady-state
+/// rendering avoids the most common cache misses.
 ///
 /// Lifecycle: construct with a [GlyphAtlasConfig],
 /// [addText]/[addEmoji]/[addCodepoint] per frame, [ensureImage] to composite
@@ -51,10 +49,8 @@ class GlyphAtlas {
   /// Returns or creates a glyph for a single [codepoint].
   ///
   /// Built-in sprite codepoints bypass font rasterization entirely and
-  /// render from geometry. For non-sprite codepoints, [_codepoints] acts
-  /// as a write-through memo over [addText]: a fast path that avoids
-  /// allocating `String.fromCharCode` on cache hit, with the actual entry
-  /// living in `_glyphs` so it stays shared with text-keyed callers.
+  /// render from geometry. Non-sprite codepoints route through the text
+  /// lane so single-codepoint and text-keyed callers share entries.
   GlyphEntry addCodepoint(
     int codepoint, {
     required bool bold,
@@ -107,25 +103,7 @@ class GlyphAtlas {
   /// to do with the sprite path. All underline styles are pre-seeded too
   /// so decoration rendering never triggers a mid-frame atlas composite.
   void _preseed() {
-    for (final (bold, italic) in [
-      (false, false),
-      (true, false),
-      (false, true),
-      (true, true),
-    ]) {
-      for (var cp = 0x21; cp <= 0x7E; cp++) {
-        addCodepoint(cp, bold: bold, italic: italic);
-      }
-    }
-
-    for (final cp in _cache.supportedSpriteCodepoints) {
-      addCodepoint(cp, bold: false, italic: false);
-    }
-
-    for (final style in UnderlineStyle.values) {
-      if (style != .none) addDecoration(style);
-    }
-
+    _cache.preseedCommonGlyphs();
     ensureImage();
   }
 }

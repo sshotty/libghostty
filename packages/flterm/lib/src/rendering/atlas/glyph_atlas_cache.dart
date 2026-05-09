@@ -1,87 +1,46 @@
 import 'package:libghostty/libghostty.dart' show UnderlineStyle;
 
-import '../sprite/sprite_face.dart';
 import 'glyph_entry.dart';
 import 'glyph_rasterizer.dart';
+import 'glyph_sprite_atlas_lane.dart';
+import 'glyph_text_atlas_lane.dart';
 
-/// Lookup key for a cached glyph. Two glyphs with the same text, bold,
-/// and italic state share the same atlas entry.
-typedef TextGlyphKey = ({String text, bool bold, bool italic});
-
-typedef _CodepointGlyphKey = ({
-  int codepoint,
-  bool bold,
-  bool italic,
-  int span,
-});
-typedef _GlyphCacheKey = ({String text, bool bold, bool italic, int span});
-typedef _SpriteKey = ({int codepoint, int span});
+export 'glyph_text_atlas_lane.dart' show TextGlyphKey;
 
 /// Caches glyph atlas entries and delegates rasterization on cache miss.
 class GlyphAtlasCache {
-  final Map<_GlyphCacheKey, GlyphEntry> _glyphs = {};
-  final Map<UnderlineStyle, GlyphEntry> _decorations = {};
-  final Map<_SpriteKey, GlyphEntry> _spriteCodepoints = {};
-  final Map<_CodepointGlyphKey, GlyphEntry> _codepoints = {};
-  final GlyphRasterizer _rasterizer;
-  final SpriteFace _spriteFace;
+  final GlyphTextAtlasLane _text;
+  final GlyphSpriteAtlasLane _sprites;
 
-  GlyphAtlasCache(this._rasterizer, {SpriteFace? spriteFace})
-    : _spriteFace = spriteFace ?? SpriteFace();
+  GlyphAtlasCache(GlyphRasterizer rasterizer)
+    : _text = GlyphTextAtlasLane(rasterizer),
+      _sprites = GlyphSpriteAtlasLane(rasterizer);
 
-  int get size => _glyphs.length + _spriteCodepoints.length;
-
-  Iterable<int> get supportedSpriteCodepoints =>
-      _spriteFace.supportedCodepoints;
+  int get size => _text.size + _sprites.size;
 
   /// Dispatches to [addEmoji] when [emoji] is true, otherwise [addText].
   GlyphEntry add(TextGlyphKey key, {int span = 1, bool emoji = false}) {
-    return emoji ? addEmoji(key, span: span) : addText(key, span: span);
+    return _text.add(key, span: span, emoji: emoji);
   }
 
   /// Returns or creates a glyph for a single [codepoint].
   ///
   /// Built-in sprite codepoints bypass font rasterization entirely and
-  /// render from geometry. For non-sprite codepoints, [_codepoints] acts
-  /// as a write-through memo over [addText]: a fast path that avoids
-  /// allocating `String.fromCharCode` on cache hit, with the actual entry
-  /// living in `_glyphs` so it stays shared with text-keyed callers.
+  /// render from geometry. Non-sprite codepoints route through the text
+  /// lane so single-codepoint and text-keyed callers share entries.
   GlyphEntry addCodepoint(
     int codepoint, {
     required bool bold,
     required bool italic,
     int span = 1,
   }) {
-    final glyph = _spriteFace.glyphFor(codepoint);
-    if (glyph != null) {
-      final spriteKey = (codepoint: codepoint, span: span);
-      return _spriteCodepoints[spriteKey] ??= _rasterizer.rasterizeSprite(
-        glyph,
-        span: span,
-      );
-    }
-
-    final codepointKey = (
-      codepoint: codepoint,
-      bold: bold,
-      italic: italic,
-      span: span,
-    );
-    final existing = _codepoints[codepointKey];
-    if (existing != null) return existing;
-
-    final entry = addText((
-      text: String.fromCharCode(codepoint),
-      bold: bold,
-      italic: italic,
-    ), span: span);
-    _codepoints[codepointKey] = entry;
-    return entry;
+    return _sprites.addCodepoint(codepoint, span: span) ??
+        _text.addCodepoint(codepoint, bold: bold, italic: italic, span: span);
   }
 
   /// Returns or creates a decoration sprite for the given underline [style].
   GlyphEntry addDecoration(UnderlineStyle style) {
-    return _decorations[style] ??= _rasterizer.rasterizeDecoration(style);
+    return _sprites.addDecoration(style);
   }
 
   /// Returns or creates an emoji glyph for [key].
@@ -93,42 +52,29 @@ class GlyphAtlasCache {
   /// reuse the cell's atlas slot instead of rasterizing a duplicate that
   /// wouldn't be composited yet.
   GlyphEntry addEmoji(TextGlyphKey key, {int span = 1}) {
-    final cacheKey = (
-      text: key.text,
-      bold: key.bold,
-      italic: key.italic,
-      span: span,
-    );
-    return _glyphs[cacheKey] ??= _rasterizer.rasterizeEmoji(
-      key.text,
-      bold: key.bold,
-      italic: key.italic,
-      span: span,
-    );
+    return _text.addEmoji(key, span: span);
   }
 
   /// Returns or creates a text glyph for [key].
   GlyphEntry addText(TextGlyphKey key, {int span = 1}) {
-    final cacheKey = (
-      text: key.text,
-      bold: key.bold,
-      italic: key.italic,
-      span: span,
-    );
-    return _glyphs[cacheKey] ??= _rasterizer.rasterizeText(
-      key.text,
-      bold: key.bold,
-      italic: key.italic,
-      span: span,
-    );
+    return _text.addText(key, span: span);
   }
 
   void clear() {
-    _glyphs.clear();
-    _codepoints.clear();
-    _spriteCodepoints.clear();
-    _decorations.clear();
+    _text.clear();
+    _sprites.clear();
   }
 
-  bool hasSprite(int codepoint) => _spriteFace.hasCodepoint(codepoint);
+  bool hasSprite(int codepoint) => _sprites.hasCodepoint(codepoint);
+
+  /// Pre-seeds glyphs that are expected to appear in nearly every terminal.
+  ///
+  /// Text and sprite lanes own their specific preseed rules so callers do
+  /// not need to know which codepoints are font-rasterized vs. built-in
+  /// geometry.
+  void preseedCommonGlyphs() {
+    _text.preseedAscii();
+    _sprites.preseedCodepoints();
+    _sprites.preseedDecorations();
+  }
 }
