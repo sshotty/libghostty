@@ -16,6 +16,15 @@ typedef _SpriteKey = ({int codepoint, int span});
 
 /// Caches atlas entries and delegates rasterization on cache miss.
 class AtlasCache {
+  // Printable ASCII excluding space; space does not rasterize.
+  static const _printableAsciiStart = 0x21; // !
+  static const _printableAsciiEnd = 0x7E; // ~
+  static const _printableAsciiCount =
+      _printableAsciiEnd - _printableAsciiStart + 1;
+
+  // Built-in sprites start at U+2500; lower glyphs skip registry lookup.
+  static const _builtinSpriteStart = 0x2500;
+
   final SpriteFace _spriteFace;
   final TextLane _textLane;
   final EmojiLane _emojiLane;
@@ -27,6 +36,10 @@ class AtlasCache {
   final Map<_SpriteKey, AtlasEntry> _sprites = {};
   final Map<_CodepointKey, AtlasEntry> _codepoints = {};
   final Map<UnderlineStyle, AtlasEntry> _decorations = {};
+  final List<AtlasEntry?> _regularAscii = List.filled(
+    _printableAsciiCount,
+    null,
+  );
 
   AtlasCache({
     required TextLane textLane,
@@ -60,8 +73,23 @@ class AtlasCache {
     required bool italic,
     int span = 1,
   }) {
-    final sprite = _addSpriteCodepoint(codepoint, span: span);
-    if (sprite != null) return sprite;
+    if (span == 1 &&
+        !bold &&
+        !italic &&
+        codepoint >= _printableAsciiStart &&
+        codepoint <= _printableAsciiEnd) {
+      final index = codepoint - _printableAsciiStart;
+      return _regularAscii[index] ??= _addText((
+        text: String.fromCharCode(codepoint),
+        bold: false,
+        italic: false,
+      ));
+    }
+
+    if (codepoint >= _builtinSpriteStart) {
+      final sprite = _addSpriteCodepoint(codepoint, span: span);
+      if (sprite != null) return sprite;
+    }
 
     final key = (codepoint: codepoint, bold: bold, italic: italic, span: span);
     final existing = _codepoints[key];
@@ -87,6 +115,7 @@ class AtlasCache {
     _codepoints.clear();
     _sprites.clear();
     _decorations.clear();
+    _regularAscii.fillRange(0, _regularAscii.length);
   }
 
   bool hasSprite(int codepoint) => _spriteFace.hasCodepoint(codepoint);
