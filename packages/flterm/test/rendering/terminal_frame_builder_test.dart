@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:flterm/src/foundation/cell_metrics.dart';
+import 'package:flterm/src/foundation/dynamic_color.dart';
 import 'package:flterm/src/foundation/terminal_selection.dart';
 import 'package:flterm/src/foundation/terminal_theme.dart';
 import 'package:flterm/src/rendering/atlas/atlas.dart';
@@ -50,6 +51,84 @@ void main() {
       expect(sprites.emoji.count, greaterThan(0));
       expect(atlas.spriteImage, isNotNull);
       expect(atlas.emojiImage, isNotNull);
+    });
+
+    test('sync emits operator ligatures without adding text atlas entries', () {
+      final initialCacheSize = atlas.cacheSize;
+      terminal.writeUtf8('=> !=');
+
+      builder.sync(terminal, terminalDirty: true);
+
+      expect(sprites.shaped.count, 2);
+      expect(atlas.cacheSize, initialCacheSize);
+    });
+
+    test('sync chunks long operator runs without adding atlas entries', () {
+      final localTerminal = Terminal(cols: 260, rows: 1);
+      final localAtlas = Atlas(_config());
+      final localSprites = SpriteBuffer();
+      final localState = TerminalPaintState(TerminalTheme.dark(), _metrics)
+        ..cols = 260
+        ..rows = 1;
+      final localBuilder = TerminalFrameBuilder(
+        localAtlas,
+        localSprites,
+        localState,
+      )..configure(1, 260);
+      addTearDown(() {
+        localBuilder.dispose();
+        localSprites.dispose();
+        localAtlas.dispose();
+        localTerminal.dispose();
+      });
+      final initialCacheSize = localAtlas.cacheSize;
+      localTerminal.writeUtf8(List.filled(260, r'$').join());
+
+      localBuilder.sync(localTerminal, terminalDirty: true);
+
+      expect(localSprites.shaped.count, 2);
+      expect(localAtlas.cacheSize, initialCacheSize);
+    });
+
+    test('sync resolves palette colors from render state colors', () {
+      terminal.palette = [
+        for (var i = 0; i < 256; i++)
+          i == 1 ? const RgbColor(1, 2, 3) : const RgbColor(0, 0, 0),
+      ];
+      terminal.writeUtf8('\x1b[31mA');
+
+      builder.sync(terminal, terminalDirty: true);
+
+      expect(sprites.regular.sealedColors.single, 0xFF010203.toSigned(32));
+    });
+
+    test('sync resolves cursor dynamic colors from render state colors', () {
+      state.updateTheme(
+        TerminalTheme.dark().copyWith(
+          cursor: const CursorTheme(color: DynamicColor.cellForeground()),
+        ),
+      );
+      terminal.palette = [
+        for (var i = 0; i < 256; i++)
+          i == 1 ? const RgbColor(1, 2, 3) : const RgbColor(0, 0, 0),
+      ];
+      terminal.writeUtf8('\x1b[31mA\x1b[1;1H');
+
+      builder.sync(terminal, terminalDirty: true);
+
+      expect(state.cursorColorArgb, 0xFF010203);
+    });
+
+    test('sync resolves underline colors from render state colors', () {
+      terminal.palette = [
+        for (var i = 0; i < 256; i++)
+          i == 1 ? const RgbColor(1, 2, 3) : const RgbColor(0, 0, 0),
+      ];
+      terminal.writeUtf8('\x1b[4;58;5;1mA');
+
+      builder.sync(terminal, terminalDirty: true);
+
+      expect(sprites.underline.sealedColors.single, 0xFF010203.toSigned(32));
     });
 
     test(

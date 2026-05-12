@@ -16,6 +16,15 @@ typedef _SpriteKey = ({int codepoint, int span});
 
 /// Caches atlas entries and delegates rasterization on cache miss.
 class AtlasCache {
+  // Printable ASCII excluding space; space does not rasterize.
+  static const _printableAsciiStart = 0x21; // !
+  static const _printableAsciiEnd = 0x7E; // ~
+  static const _printableAsciiCount =
+      _printableAsciiEnd - _printableAsciiStart + 1;
+
+  // Built-in sprites start at U+2500; lower glyphs skip registry lookup.
+  static const _builtinSpriteStart = 0x2500;
+
   final SpriteFace _spriteFace;
   final TextLane _textLane;
   final EmojiLane _emojiLane;
@@ -27,6 +36,10 @@ class AtlasCache {
   final Map<_SpriteKey, AtlasEntry> _sprites = {};
   final Map<_CodepointKey, AtlasEntry> _codepoints = {};
   final Map<UnderlineStyle, AtlasEntry> _decorations = {};
+  final List<AtlasEntry?> _regularAscii = List.filled(
+    _printableAsciiCount,
+    null,
+  );
 
   AtlasCache({
     required TextLane textLane,
@@ -60,8 +73,23 @@ class AtlasCache {
     required bool italic,
     int span = 1,
   }) {
-    final sprite = _addSpriteCodepoint(codepoint, span: span);
-    if (sprite != null) return sprite;
+    if (span == 1 &&
+        !bold &&
+        !italic &&
+        codepoint >= _printableAsciiStart &&
+        codepoint <= _printableAsciiEnd) {
+      final index = codepoint - _printableAsciiStart;
+      return _regularAscii[index] ??= _addText((
+        text: String.fromCharCode(codepoint),
+        bold: false,
+        italic: false,
+      ));
+    }
+
+    if (codepoint >= _builtinSpriteStart) {
+      final sprite = _addSpriteCodepoint(codepoint, span: span);
+      if (sprite != null) return sprite;
+    }
 
     final key = (codepoint: codepoint, bold: bold, italic: italic, span: span);
     final existing = _codepoints[key];
@@ -87,16 +115,19 @@ class AtlasCache {
     _codepoints.clear();
     _sprites.clear();
     _decorations.clear();
+    _regularAscii.fillRange(0, _regularAscii.length);
   }
 
   bool hasSprite(int codepoint) => _spriteFace.hasCodepoint(codepoint);
 
   /// Pre-seeds glyphs that are expected to appear in nearly every terminal.
   ///
-  /// Printable ASCII is seeded for every style because it appears in nearly
-  /// every frame. Built-in sprites stay lazy so they do not consume memory
-  /// until a terminal actually renders them. Decorations are seeded because
-  /// they are few and avoid mid-frame atlas composites.
+  /// Normal printable ASCII is seeded because it appears in nearly every frame.
+  /// Bold and italic variants stay lazy so every atlas does not pay the memory
+  /// cost for style combinations that may never render. Built-in sprites stay
+  /// lazy so they do not consume memory until a terminal actually renders them.
+  /// Decorations are seeded because they are few and avoid mid-frame atlas
+  /// composites.
   void preseedCommonEntries() {
     _preseedAscii();
     _preseedDecorations();
@@ -141,15 +172,12 @@ class AtlasCache {
   }
 
   void _preseedAscii() {
-    for (final (bold, italic) in [
-      (false, false),
-      (true, false),
-      (false, true),
-      (true, true),
-    ]) {
-      for (var codepoint = 0x21; codepoint <= 0x7E; codepoint++) {
-        addCodepoint(codepoint, bold: bold, italic: italic);
-      }
+    for (
+      var codepoint = _printableAsciiStart;
+      codepoint <= _printableAsciiEnd;
+      codepoint++
+    ) {
+      addCodepoint(codepoint, bold: false, italic: false);
     }
   }
 

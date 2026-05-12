@@ -10,6 +10,11 @@ import 'codepoint_classification.dart';
 /// or how the entry is painted; row and cursor builders own the output lane.
 final class CellContentResolver {
   final Atlas _atlas;
+  var _lastCodepoint = -1;
+  var _lastSpan = 0;
+  var _lastBold = false;
+  var _lastItalic = false;
+  late AtlasEntry _lastEntry;
 
   CellContentResolver(this._atlas);
 
@@ -18,13 +23,28 @@ final class CellContentResolver {
     required Style style,
     required int span,
   }) {
+    final graphemeLength = cell.graphemeLength;
+    if (graphemeLength == 0) return null;
+
+    final codepoint = cell.codepoint;
+    if (graphemeLength == 1) {
+      if (codepoint == 0x20) return null;
+      if (_usesCodepointEntry(
+        codepoint: codepoint,
+        graphemeLength: graphemeLength,
+        span: span,
+      )) {
+        return resolveCodepoint(codepoint, style: style, span: span);
+      }
+    }
+
     final content = cell.content;
     if (content.isEmpty || content == ' ') return null;
 
     return resolve(
       content: content,
-      codepoint: cell.codepoint,
-      graphemeLength: cell.graphemeLength,
+      codepoint: codepoint,
+      graphemeLength: graphemeLength,
       style: style,
       span: span,
     );
@@ -59,24 +79,25 @@ final class CellContentResolver {
     required Style style,
     int span = 1,
   }) {
-    return _atlas.addCodepoint(
+    if (codepoint == _lastCodepoint &&
+        span == _lastSpan &&
+        style.bold == _lastBold &&
+        style.italic == _lastItalic) {
+      return _lastEntry;
+    }
+
+    final entry = _atlas.addCodepoint(
       codepoint,
       bold: style.bold,
       italic: style.italic,
       span: span,
     );
-  }
-
-  AtlasEntry resolveTextRun(
-    String text, {
-    required Style style,
-    required int span,
-  }) {
-    return _atlas.add((
-      text: text,
-      bold: style.bold,
-      italic: style.italic,
-    ), span: span);
+    _lastCodepoint = codepoint;
+    _lastSpan = span;
+    _lastBold = style.bold;
+    _lastItalic = style.italic;
+    _lastEntry = entry;
+    return entry;
   }
 
   bool _paintsAsEmoji(String content, int codepoint, {required int span}) {
