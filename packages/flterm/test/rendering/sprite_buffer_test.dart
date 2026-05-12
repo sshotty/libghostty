@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:ui';
 
 import 'package:flterm/src/rendering/atlas/atlas.dart';
 import 'package:flterm/src/rendering/atlas/sprite_buffer.dart';
@@ -296,6 +297,71 @@ void main() {
       expect(buffer.regular.count, 2);
     });
 
+    test('clean rows keep shaped runs across a partial rebuild', () {
+      final buffer = SpriteBuffer()..configure(3, 4);
+      addTearDown(buffer.dispose);
+      final row0 = _shapedRun('=>');
+      final row2 = _shapedRun('!=');
+      buffer.beginRow(0);
+      buffer.shaped.add(row0);
+      buffer.endRow();
+      buffer.beginRow(2);
+      buffer.shaped.add(row2);
+      buffer.endRow();
+      buffer.seal();
+
+      final replacement = _shapedRun('==');
+      buffer.beginRow(2);
+      buffer.shaped.add(replacement);
+      buffer.endRow();
+      buffer.seal();
+
+      expect(buffer.shaped.count, 2);
+      expect(buffer.shaped.rows[0].single, same(row0));
+      expect(buffer.shaped.rows[2].single, same(replacement));
+    });
+
+    test('dirty rows replace shaped runs', () {
+      final buffer = SpriteBuffer()..configure(1, 4);
+      addTearDown(buffer.dispose);
+      final first = _shapedRun('=>');
+      buffer.beginRow(0);
+      buffer.shaped.add(first);
+      buffer.endRow();
+      buffer.seal();
+
+      final second = _shapedRun('!=');
+      buffer.beginRow(0);
+      buffer.shaped.add(second);
+      buffer.endRow();
+      buffer.seal();
+
+      expect(buffer.shaped.count, 1);
+      expect(buffer.shaped.rows[0].single, same(second));
+    });
+
+    test('configure and dispose clear shaped runs', () {
+      final buffer = SpriteBuffer()..configure(2, 4);
+      final first = _shapedRun('=>');
+      buffer.beginRow(1);
+      buffer.shaped.add(first);
+      buffer.endRow();
+      expect(buffer.shaped.count, 1);
+
+      buffer.configure(1, 4);
+      expect(buffer.shaped.count, 0);
+      expect(buffer.shaped.rows.length, 1);
+
+      buffer.beginRow(0);
+      buffer.shaped.add(_shapedRun('!='));
+      buffer.endRow();
+      expect(buffer.shaped.count, 1);
+
+      buffer.dispose();
+      expect(buffer.shaped.count, 0);
+      expect(buffer.shaped.rows, isEmpty);
+    });
+
     test('dispose releases every channel', () {
       final buffer = SpriteBuffer()..configure(2, 4);
       buffer.beginRow(0);
@@ -326,3 +392,16 @@ AtlasEntry _entry({
   srcBottom: srcBottom,
   bearingY: 0,
 );
+
+ShapedRun _shapedRun(String text) {
+  final paragraph =
+      (ParagraphBuilder(
+          ParagraphStyle(textDirection: TextDirection.ltr),
+        )..addText(text)).build()
+        ..layout(const ParagraphConstraints(width: double.infinity));
+  return ShapedRun(
+    paragraph: paragraph,
+    offset: Offset.zero,
+    clip: Rect.largest,
+  );
+}

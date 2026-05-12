@@ -11,6 +11,8 @@ final class ShapedRunPainter implements TerminalPainter {
 
   @override
   void paint(Canvas canvas) {
+    if (_runs.count == 0) return;
+
     for (final row in _runs.rows) {
       for (final run in row) {
         canvas.save();

@@ -172,7 +172,11 @@ class AtlasCache {
   }
 
   void _preseedAscii() {
-    for (var codepoint = 0x21; codepoint <= 0x7E; codepoint++) {
+    for (
+      var codepoint = _printableAsciiStart;
+      codepoint <= _printableAsciiEnd;
+      codepoint++
+    ) {
       addCodepoint(codepoint, bold: false, italic: false);
     }
   }

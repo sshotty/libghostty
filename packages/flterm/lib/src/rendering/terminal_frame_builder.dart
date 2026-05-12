@@ -12,6 +12,14 @@ import 'atlas/sprite_buffer.dart';
 import 'cell_content_resolver.dart';
 import 'paint_state.dart';
 
+const _italicOverhangFontSizeFactor = 0.15;
+
+// Conservative context lets boundary-crossing ligatures shape correctly.
+const _operatorLigatureContextCells = 16;
+
+// Above common wide terminal columns; caps pathological operator animations.
+const _operatorRunChunkCells = 256;
+
 /// ASCII punctuation/operator: not digit, not uppercase, not lowercase.
 bool _isOperator(int cp) {
   return cp < 0x30 ||
@@ -20,11 +28,63 @@ bool _isOperator(int cp) {
       cp > 0x7A;
 }
 
-// Above common wide terminal columns; caps pathological operator animations.
-const _operatorRunChunkCells = 256;
+int _resolveColorArgb(
+  TerminalPaintState state,
+  CellColor color, {
+  required bool isForeground,
+  int? defaultForeground,
+  int? defaultBackground,
+}) {
+  return switch (color) {
+    DefaultColor() =>
+      isForeground
+          ? defaultForeground ?? state.terminalForegroundArgb
+          : defaultBackground ?? state.terminalBackgroundArgb,
+    RgbColor() => color.toArgb32,
+    PaletteColor(:final index) => state.terminalPaletteArgb[index],
+  };
+}
 
-// Conservative context lets boundary-crossing ligatures shape correctly.
-const _operatorLigatureContextCells = 16;
+(int foreground, int background) _resolveStyleColors(
+  TerminalPaintState state,
+  Style style, {
+  int? defaultForeground,
+  int? defaultBackground,
+}) {
+  var foreground = _resolveColorArgb(
+    state,
+    style.foreground,
+    isForeground: true,
+    defaultForeground: defaultForeground,
+    defaultBackground: defaultBackground,
+  );
+  var background = _resolveColorArgb(
+    state,
+    style.background,
+    isForeground: false,
+    defaultForeground: defaultForeground,
+    defaultBackground: defaultBackground,
+  );
+
+  if (style.bold) {
+    final boldColor = state.theme.boldColor;
+    if (boldColor != null) {
+      foreground = boldColor.toARGB32();
+    } else if (state.theme.boldIsBright) {
+      final raw = style.foreground;
+      if (raw is PaletteColor && raw.index < 8) {
+        foreground = state.terminalPaletteArgb[raw.index + 8];
+      }
+    }
+  }
+
+  if (style.inverse) (foreground, background) = (background, foreground);
+  if (style.faint) {
+    foreground = (state.faintAlpha << 24) | (foreground & 0x00FFFFFF);
+  }
+
+  return (foreground, background);
+}
 
 /// Tracks per-row dirtiness from sources outside libghostty's own row-dirty
 /// flag, such as selection, blink, layout, or atlas changes.
@@ -203,14 +263,16 @@ final class _AsciiOperatorRun {
 
   String get text => String.fromCharCodes(_codepoints);
 
-  List<int> get codepoints => _codepoints;
-
   void add(int codepoint, double cellX) {
     if (_codepoints.isEmpty) x = cellX;
     _codepoints.add(codepoint);
   }
 
   void clear() => _codepoints.clear();
+
+  String textSlice(int start, int end) {
+    return String.fromCharCodes(_codepoints, start, end);
+  }
 }
 
 /// Snapshot of the cell under the cursor.
@@ -306,11 +368,8 @@ final class _CursorFrameBuilder {
   }
 
   (Color, Color) _resolveCellColors(_CursorCellSnapshot cell) {
-    final theme = _state.theme;
-    var fg = theme.resolveColor(cell.style.foreground, isForeground: true);
-    var bg = theme.resolveColor(cell.style.background, isForeground: false);
-    if (cell.style.inverse) (fg, bg) = (bg, fg);
-    return (fg, bg);
+    final (fg, bg) = _resolveStyleColors(_state, cell.style);
+    return (Color(fg), Color(bg));
   }
 
   // An OSC 12 color reported by libghostty overrides the theme cursor color.
@@ -410,113 +469,6 @@ final class _ForegroundEmitter {
     _operators.clear();
   }
 
-  void _emitShapedRun(
-    _AsciiOperatorRun run,
-    _RowBuildState row, {
-    required Style style,
-  }) {
-    final length = run.length;
-    if (length <= _operatorRunChunkCells) {
-      _emitShapedChunk(
-        run.text,
-        row,
-        style: style,
-        runX: run.x,
-        textStart: 0,
-        coreStart: 0,
-        coreEnd: length,
-      );
-      return;
-    }
-
-    final codepoints = run.codepoints;
-    var coreStart = 0;
-    while (coreStart < length) {
-      final coreEnd = math.min(coreStart + _operatorRunChunkCells, length);
-      final textStart = math.max(0, coreStart - _operatorLigatureContextCells);
-      final textEnd = math.min(length, coreEnd + _operatorLigatureContextCells);
-      _emitShapedChunk(
-        String.fromCharCodes(codepoints, textStart, textEnd),
-        row,
-        style: style,
-        runX: run.x,
-        textStart: textStart,
-        coreStart: coreStart,
-        coreEnd: coreEnd,
-      );
-      coreStart = coreEnd;
-    }
-  }
-
-  void _emitShapedChunk(
-    String text,
-    _RowBuildState row, {
-    required Style style,
-    required double runX,
-    required int textStart,
-    required int coreStart,
-    required int coreEnd,
-  }) {
-    final theme = _state.theme;
-    final textX = runX + _frame.cellWidth * textStart;
-    final coreX = runX + _frame.cellWidth * coreStart;
-    final coreWidth = _frame.cellWidth * (coreEnd - coreStart);
-    final overhang = style.italic
-        ? math.max(1.0, (theme.fontSize * 0.15).ceilToDouble())
-        : 0.0;
-    final paragraph =
-        (ParagraphBuilder(_frame.paragraphStyle)
-              ..pushStyle(_textStyle(row.foreground, style))
-              ..addText(text)
-              ..pop())
-            .build()
-          ..layout(const ParagraphConstraints(width: .infinity));
-    _sprites.shaped.add(
-      ShapedRun(
-        paragraph: paragraph,
-        offset: Offset(
-          textX,
-          row.rowY + _state.metrics.baseline - paragraph.alphabeticBaseline,
-        ),
-        clip: Rect.fromLTWH(
-          coreX,
-          row.rowY,
-          coreWidth + overhang,
-          _frame.cellHeight,
-        ),
-      ),
-    );
-  }
-
-  TextStyle _textStyle(int foreground, Style style) {
-    final theme = _state.theme;
-    final bold = style.bold;
-    final italic = style.italic;
-    final cached = _lastTextStyle;
-    if (cached != null &&
-        identical(theme, _lastTextStyleTheme) &&
-        foreground == _lastTextStyleForeground &&
-        bold == _lastTextStyleBold &&
-        italic == _lastTextStyleItalic) {
-      return cached;
-    }
-
-    final textStyle = TextStyle(
-      color: Color(foreground),
-      fontSize: theme.fontSize,
-      fontFamily: theme.fontFamily,
-      decoration: TextDecoration.none,
-      fontWeight: bold ? .bold : theme.fontWeight,
-      fontStyle: italic ? .italic : .normal,
-      fontFamilyFallback: theme.fontFamilyFallback,
-    );
-    _lastTextStyleTheme = theme;
-    _lastTextStyleForeground = foreground;
-    _lastTextStyleBold = bold;
-    _lastTextStyleItalic = italic;
-    return _lastTextStyle = textStyle;
-  }
-
   void _emitCodepoint(
     int codepoint,
     _RowBuildState row, {
@@ -551,11 +503,121 @@ final class _ForegroundEmitter {
         throw StateError('Decoration atlas entries cannot paint cell content.');
     }
   }
+
+  void _emitShapedChunk(
+    String text,
+    _RowBuildState row, {
+    required Style style,
+    required double runX,
+    required int textStart,
+    required int coreStart,
+    required int coreEnd,
+  }) {
+    final theme = _state.theme;
+    final textX = runX + _frame.cellWidth * textStart;
+    final coreX = runX + _frame.cellWidth * coreStart;
+    final coreWidth = _frame.cellWidth * (coreEnd - coreStart);
+    final overhang = style.italic
+        ? math.max(
+            1.0,
+            (theme.fontSize * _italicOverhangFontSizeFactor).ceilToDouble(),
+          )
+        : 0.0;
+    final paragraph =
+        (ParagraphBuilder(_frame.paragraphStyle)
+              ..pushStyle(_textStyle(row.foreground, style))
+              ..addText(text)
+              ..pop())
+            .build()
+          ..layout(const ParagraphConstraints(width: .infinity));
+    _sprites.shaped.add(
+      ShapedRun(
+        paragraph: paragraph,
+        offset: Offset(
+          textX,
+          row.rowY + _state.metrics.baseline - paragraph.alphabeticBaseline,
+        ),
+        clip: Rect.fromLTWH(
+          coreX,
+          row.rowY,
+          coreWidth + overhang,
+          _frame.cellHeight,
+        ),
+      ),
+    );
+  }
+
+  void _emitShapedRun(
+    _AsciiOperatorRun run,
+    _RowBuildState row, {
+    required Style style,
+  }) {
+    final length = run.length;
+    if (length <= _operatorRunChunkCells) {
+      _emitShapedChunk(
+        run.text,
+        row,
+        style: style,
+        runX: run.x,
+        textStart: 0,
+        coreStart: 0,
+        coreEnd: length,
+      );
+      return;
+    }
+
+    var coreStart = 0;
+    while (coreStart < length) {
+      final coreEnd = math.min(coreStart + _operatorRunChunkCells, length);
+      final textStart = math.max(0, coreStart - _operatorLigatureContextCells);
+      final textEnd = math.min(length, coreEnd + _operatorLigatureContextCells);
+      _emitShapedChunk(
+        run.textSlice(textStart, textEnd),
+        row,
+        style: style,
+        runX: run.x,
+        textStart: textStart,
+        coreStart: coreStart,
+        coreEnd: coreEnd,
+      );
+      coreStart = coreEnd;
+    }
+  }
+
+  TextStyle _textStyle(int foreground, Style style) {
+    final theme = _state.theme;
+    final bold = style.bold;
+    final italic = style.italic;
+    final cached = _lastTextStyle;
+    if (cached != null &&
+        identical(theme, _lastTextStyleTheme) &&
+        foreground == _lastTextStyleForeground &&
+        bold == _lastTextStyleBold &&
+        italic == _lastTextStyleItalic) {
+      return cached;
+    }
+
+    final textStyle = TextStyle(
+      color: Color(foreground),
+      fontSize: theme.fontSize,
+      fontFamily: theme.fontFamily,
+      decoration: TextDecoration.none,
+      fontWeight: bold ? .bold : theme.fontWeight,
+      fontStyle: italic ? .italic : .normal,
+      fontFamilyFallback: theme.fontFamilyFallback,
+    );
+    _lastTextStyleTheme = theme;
+    _lastTextStyleForeground = foreground;
+    _lastTextStyleBold = bold;
+    _lastTextStyleItalic = italic;
+    return _lastTextStyle = textStyle;
+  }
 }
 
 /// Frame-scoped metrics and theme values read by row emitters.
 final class _FrameSnapshot {
   late ParagraphStyle paragraphStyle;
+  TerminalTheme? _paragraphStyleTheme;
   var cellWidth = 0.0;
   var cellHeight = 0.0;
   var underlineThickness = 0.0;
@@ -596,11 +658,15 @@ final class _FrameSnapshot {
     cols = state.cols;
 
     final theme = state.theme;
-    paragraphStyle = ParagraphStyle(
-      fontSize: theme.fontSize,
-      fontFamily: theme.fontFamily,
-      textAlign: .start,
-    );
+    if (!identical(theme, _paragraphStyleTheme)) {
+      paragraphStyle = ParagraphStyle(
+        fontSize: theme.fontSize,
+        fontFamily: theme.fontFamily,
+        textAlign: .start,
+        textDirection: TextDirection.ltr,
+      );
+      _paragraphStyleTheme = theme;
+    }
     applyCellOpacity =
         theme.backgroundOpacityCells && theme.backgroundOpacity < 1.0;
     cellOpacityAlpha = theme.backgroundOpacityAlpha;
@@ -750,30 +816,15 @@ final class _StyleResolver {
     }
 
     final style = cell.style;
-    var foreground = _resolveColor(style.foreground, isForeground: true);
-    var background = _resolveColor(style.background, isForeground: false);
+    final (foreground, background) = _resolveStyleColors(
+      _state,
+      style,
+      defaultForeground: _defaultFg,
+      defaultBackground: _defaultBg,
+    );
     var explicitBg = style.background is! DefaultColor;
 
-    if (style.bold) {
-      final boldColor = _state.theme.boldColor;
-      if (boldColor != null) {
-        foreground = boldColor.toARGB32();
-      } else if (_state.theme.boldIsBright) {
-        final raw = style.foreground;
-        if (raw is PaletteColor && raw.index < 8) {
-          foreground = _state.terminalPaletteArgb[raw.index + 8];
-        }
-      }
-    }
-
-    if (style.inverse) {
-      (foreground, background) = (background, foreground);
-      explicitBg = true;
-    }
-
-    if (style.faint) {
-      foreground = (_state.faintAlpha << 24) | (foreground & 0x00FFFFFF);
-    }
+    if (style.inverse) explicitBg = true;
 
     if (id < _maxEntries) {
       _gen[id] = _generation;
@@ -784,14 +835,6 @@ final class _StyleResolver {
     }
 
     return (foreground, background, style, explicitBg);
-  }
-
-  int _resolveColor(CellColor color, {required bool isForeground}) {
-    return switch (color) {
-      DefaultColor() => isForeground ? _defaultFg : _defaultBg,
-      RgbColor() => color.toArgb32,
-      PaletteColor(:final index) => _state.terminalPaletteArgb[index],
-    };
   }
 
   int _resolveSelectionColor(
@@ -871,9 +914,7 @@ final class _TerminalRowBuilder {
 
     final underlineColor = style.underlineColor;
     final color = underlineColor != null
-        ? _state.theme
-              .resolveColor(underlineColor, isForeground: true)
-              .toARGB32()
+        ? _resolveColorArgb(_state, underlineColor, isForeground: true)
         : row.foreground;
 
     if (style.underline != UnderlineStyle.none) {

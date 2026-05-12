@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:flterm/src/foundation/cell_metrics.dart';
+import 'package:flterm/src/foundation/dynamic_color.dart';
 import 'package:flterm/src/foundation/terminal_selection.dart';
 import 'package:flterm/src/foundation/terminal_theme.dart';
 import 'package:flterm/src/rendering/atlas/atlas.dart';
@@ -99,6 +100,35 @@ void main() {
       builder.sync(terminal, terminalDirty: true);
 
       expect(sprites.regular.sealedColors.single, 0xFF010203.toSigned(32));
+    });
+
+    test('sync resolves cursor dynamic colors from render state colors', () {
+      state.updateTheme(
+        TerminalTheme.dark().copyWith(
+          cursor: const CursorTheme(color: DynamicColor.cellForeground()),
+        ),
+      );
+      terminal.palette = [
+        for (var i = 0; i < 256; i++)
+          i == 1 ? const RgbColor(1, 2, 3) : const RgbColor(0, 0, 0),
+      ];
+      terminal.writeUtf8('\x1b[31mA\x1b[1;1H');
+
+      builder.sync(terminal, terminalDirty: true);
+
+      expect(state.cursorColorArgb, 0xFF010203);
+    });
+
+    test('sync resolves underline colors from render state colors', () {
+      terminal.palette = [
+        for (var i = 0; i < 256; i++)
+          i == 1 ? const RgbColor(1, 2, 3) : const RgbColor(0, 0, 0),
+      ];
+      terminal.writeUtf8('\x1b[4;58;5;1mA');
+
+      builder.sync(terminal, terminalDirty: true);
+
+      expect(sprites.underline.sealedColors.single, 0xFF010203.toSigned(32));
     });
 
     test(
