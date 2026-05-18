@@ -49,6 +49,40 @@ void main() {
       final image = KittyGraphics.of(terminal)!.image(7)!;
       expect(image.pixelData, equals(Uint8List.fromList([0xff, 0x00, 0x00])));
     });
+
+    test('APC buffer limit rejects oversized payloads', () {
+      terminal.setApcBufferLimit(1);
+
+      terminal.write(_transmitRedPixel(id: 8));
+
+      expect(KittyGraphics.of(terminal)!.image(8), isNull);
+    });
+
+    test('clearing APC buffer limit restores default limit', () {
+      terminal.setApcBufferLimit(1);
+      terminal.setApcBufferLimit(null);
+
+      terminal.write(_transmitRedPixel(id: 9));
+
+      expect(KittyGraphics.of(terminal)!.image(9), isNotNull);
+    });
+
+    test('Kitty APC buffer limit rejects oversized payloads', () {
+      terminal.setKittyApcBufferLimit(1);
+
+      terminal.write(_transmitRedPixel(id: 10));
+
+      expect(KittyGraphics.of(terminal)!.image(10), isNull);
+    });
+
+    test('clearing Kitty APC buffer limit restores default limit', () {
+      terminal.setKittyApcBufferLimit(1);
+      terminal.setKittyApcBufferLimit(null);
+
+      terminal.write(_transmitRedPixel(id: 11));
+
+      expect(KittyGraphics.of(terminal)!.image(11), isNotNull);
+    });
   });
 
   group('LibGhostty.setPngDecoder', () {

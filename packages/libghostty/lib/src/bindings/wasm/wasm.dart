@@ -946,6 +946,16 @@ class WasmBindings implements GhosttyBindings {
   }
 
   @override
+  Result terminalSetApcBufferLimit(int handle, int? bytes) {
+    return _terminalSetApcSize(handle, .apcMaxBytes, bytes);
+  }
+
+  @override
+  Result terminalSetKittyApcBufferLimit(int handle, int? bytes) {
+    return _terminalSetApcSize(handle, .apcMaxBytesKitty, bytes);
+  }
+
+  @override
   CResult<Uint8List> pasteEncode(String data, {required bool bracketed}) {
     final encoded = utf8.encode(data);
     final dataPtr = _exports.ghostty_wasm_alloc_u8_array(encoded.length);
@@ -2579,6 +2589,17 @@ class WasmBindings implements GhosttyBindings {
     _mem.writeU32(ptr + 4, value >> 32);
     final result = _exports.ghostty_terminal_set(handle, option.value, ptr);
     _exports.ghostty_wasm_free_u8_array(ptr, 8);
+    return .fromValue(result);
+  }
+
+  Result _terminalSetApcSize(int handle, TerminalOption option, int? value) {
+    if (value == null) {
+      return .fromValue(_exports.ghostty_terminal_set(handle, option.value, 0));
+    }
+    final ptr = _exports.ghostty_wasm_alloc_usize();
+    _mem.writeU32(ptr, value);
+    final result = _exports.ghostty_terminal_set(handle, option.value, ptr);
+    _exports.ghostty_wasm_free_usize(ptr);
     return .fromValue(result);
   }
 
