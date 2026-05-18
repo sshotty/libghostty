@@ -889,6 +889,16 @@ class NativeBindings implements GhosttyBindings {
   }
 
   @override
+  Result terminalSetApcBufferLimit(int handle, int? bytes) {
+    return _terminalSetApcSize(handle, .apcMaxBytes, bytes);
+  }
+
+  @override
+  Result terminalSetKittyApcBufferLimit(int handle, int? bytes) {
+    return _terminalSetApcSize(handle, .apcMaxBytesKitty, bytes);
+  }
+
+  @override
   CResult<Uint8List> pasteEncode(String data, {required bool bracketed}) {
     return using((arena) {
       final encoded = utf8.encode(data);
@@ -1462,6 +1472,18 @@ class NativeBindings implements GhosttyBindings {
       Pointer.fromAddress(handle),
       option,
       _outU64.cast(),
+    );
+  }
+
+  Result _terminalSetApcSize(int handle, TerminalOption option, int? value) {
+    if (value == null) {
+      return ghostty_terminal_set(Pointer.fromAddress(handle), option, nullptr);
+    }
+    _outSize.value = value;
+    return ghostty_terminal_set(
+      Pointer.fromAddress(handle),
+      option,
+      _outSize.cast(),
     );
   }
 

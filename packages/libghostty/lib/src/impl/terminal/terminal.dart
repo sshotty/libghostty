@@ -432,6 +432,24 @@ final class Terminal with Listenable {
     bindings.terminalScrollViewport(_handle, .delta, delta);
   }
 
+  /// Sets the maximum bytes the APC handler will buffer for all protocols.
+  ///
+  /// This replaces protocol-specific overrides. Pass null to remove all
+  /// overrides and use the built-in defaults.
+  void setApcBufferLimit(int? bytes) {
+    checkCode(bindings.terminalSetApcBufferLimit(_handle, bytes));
+  }
+
+  /// Sets the maximum bytes the APC handler will buffer for Kitty graphics
+  /// protocol data.
+  ///
+  /// This overrides the general APC buffer limit for Kitty graphics payloads.
+  /// Pass null to remove the Kitty-specific override and use the built-in
+  /// Kitty graphics default.
+  void setKittyApcBufferLimit(int? bytes) {
+    checkCode(bindings.terminalSetKittyApcBufferLimit(_handle, bytes));
+  }
+
   /// Enables or disables the file medium for Kitty image loading.
   void setKittyFileMedium({required bool enabled}) {
     checkCode(

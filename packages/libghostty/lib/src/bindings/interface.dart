@@ -148,6 +148,8 @@ abstract interface class GhosttyBindings {
   Result terminalSetKittyImageMediumFile(int handle, {bool? enabled});
   Result terminalSetKittyImageMediumTempFile(int handle, {bool? enabled});
   Result terminalSetKittyImageMediumSharedMem(int handle, {bool? enabled});
+  Result terminalSetApcBufferLimit(int handle, int? bytes);
+  Result terminalSetKittyApcBufferLimit(int handle, int? bytes);
 
   CResult<Uint8List> pasteEncode(String data, {required bool bracketed});
 
