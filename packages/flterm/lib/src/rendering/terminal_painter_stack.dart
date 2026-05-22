@@ -20,14 +20,15 @@ import 'painters/underline_painter.dart';
 final class TerminalPainterStack {
   final SpriteBuffer _sprites;
   final TerminalPaintState _state;
-  final KittyImageCache _kittyImageCache;
   final _liveKittyImageIds = <int>{};
+  final KittyImageCache _kittyImageCache;
+  final ShapedRunPainter _shapedRunPainter;
   final List<KittyPlacementSnapshot> _kittyBelowBg = [];
   final List<KittyPlacementSnapshot> _kittyBelowText = [];
   final List<KittyPlacementSnapshot> _kittyAboveText = [];
 
-  late final BackgroundPainter _backgroundPainter;
-  late final DecorationPainter _decorationPainter;
+  final BackgroundPainter _backgroundPainter;
+  final DecorationPainter _decorationPainter;
   late final KittyGraphicsPainter _kittyBelowBgPainter;
   late final KittyGraphicsPainter _kittyBelowTextPainter;
   late final KittyGraphicsPainter _kittyAboveTextPainter;
@@ -37,18 +38,16 @@ final class TerminalPainterStack {
   late CursorPainter _cursorPainter;
   late TerminalTextPainter _textPainter;
   late UnderlinePainter _underlinePainter;
-  late final ShapedRunPainter _shapedRunPainter;
 
   TerminalPainterStack({
     required Atlas atlas,
-    required SpriteBuffer sprites,
-    required TerminalPaintState state,
+    required this._sprites,
+    required this._state,
     required void Function() onImageReady,
-  }) : _state = state,
-       _sprites = sprites,
-       _kittyImageCache = KittyImageCache(onImageReady: onImageReady) {
-    _backgroundPainter = BackgroundPainter(_state, _sprites);
-    _decorationPainter = DecorationPainter(_sprites);
+  }) : _kittyImageCache = KittyImageCache(onImageReady: onImageReady),
+       _shapedRunPainter = ShapedRunPainter(_sprites.shaped),
+       _backgroundPainter = BackgroundPainter(_state, _sprites),
+       _decorationPainter = DecorationPainter(_sprites) {
     _kittyBelowBgPainter = KittyGraphicsPainter(
       state: _state,
       cache: _kittyImageCache,
@@ -64,7 +63,6 @@ final class TerminalPainterStack {
       cache: _kittyImageCache,
       snapshots: _kittyAboveText,
     );
-    _shapedRunPainter = ShapedRunPainter(_sprites.shaped);
     bindAtlas(atlas);
   }
 
