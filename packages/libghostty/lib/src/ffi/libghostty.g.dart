@@ -3239,7 +3239,7 @@ external void ghostty_terminal_reset(Terminal terminal);
 /// @ingroup terminal
 @ffi.Native<
   ffi.Int Function(Terminal, ffi.Uint16, ffi.Uint16, ffi.Uint32, ffi.Uint32)
->(symbol: 'ghostty_terminal_resize', isLeaf: true)
+>(symbol: 'ghostty_terminal_resize')
 external int _ghostty_terminal_resize(
   Terminal terminal,
   int cols,

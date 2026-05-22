@@ -109,7 +109,11 @@ Headers _headers({List<String> compilerOpts = const []}) => Headers(
   compilerOptions: [..._compilerOpts, ...compilerOpts],
 );
 
-const _nonLeafFunctions = {'ghostty_terminal_vt_write', 'ghostty_terminal_set'};
+const _nonLeafFunctions = {
+  'ghostty_terminal_resize',
+  'ghostty_terminal_vt_write',
+  'ghostty_terminal_set',
+};
 
 FfiGenerator _createGenerator({
   Map<String, Map<String, String>>? enumMemberRenames,
