@@ -863,17 +863,14 @@ final class _TerminalRowBuilder {
   late final _ForegroundEmitter _foreground;
 
   _TerminalRowBuilder({
-    required Atlas atlas,
-    required SpriteBuffer sprites,
-    required TerminalPaintState state,
+    required this._atlas,
+    required this._sprites,
+    required this._state,
     required CellContentResolver content,
-  }) : _atlas = atlas,
-       _sprites = sprites,
-       _state = state,
-       _frame = _FrameSnapshot(),
+  }) : _frame = _FrameSnapshot(),
        _row = _RowBuildState(),
-       _styles = _StyleResolver(state) {
-    _foreground = _ForegroundEmitter(sprites, content, _frame, state);
+       _styles = _StyleResolver(_state) {
+    _foreground = _ForegroundEmitter(_sprites, content, _frame, _state);
   }
 
   void beginFrame() {

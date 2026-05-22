@@ -17,13 +17,10 @@ class KittyGraphicsPainter implements TerminalPainter {
   final List<KittyPlacementSnapshot> _snapshots;
 
   KittyGraphicsPainter({
-    required KittyImageCache cache,
-    required TerminalPaintState state,
-    required List<KittyPlacementSnapshot> snapshots,
-  }) : _cache = cache,
-       _state = state,
-       _snapshots = snapshots,
-       _paint = Paint()..filterQuality = .low;
+    required this._cache,
+    required this._state,
+    required this._snapshots,
+  }) : _paint = Paint()..filterQuality = .low;
 
   @override
   void paint(Canvas canvas) {

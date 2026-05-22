@@ -168,27 +168,22 @@ class TerminalRenderBox extends RenderBox {
   var _stickToBottom = true;
   var _lastScrollbackRows = 0;
 
-  late final TerminalPaintState _paintState;
+  final TerminalPaintState _paintState;
   late final TerminalRenderPipeline _pipeline;
 
   TerminalRenderBox({
-    required Terminal terminal,
+    required this._terminal,
     required TerminalTheme theme,
     required CellMetrics metrics,
-    required ViewportOffset offset,
-    required TerminalRenderObserver renderObserver,
-    required TerminalRenderCache renderCache,
+    required this._offset,
+    required this._renderObserver,
+    required this._renderCache,
     bool blinkVisible = true,
-    OnResize? onResize,
-  }) : _terminal = terminal,
-       _offset = offset,
-       _onResize = onResize,
-       _renderObserver = renderObserver,
-       _renderCache = renderCache {
-    _paintState = TerminalPaintState(theme, metrics)
-      ..blinkVisible = blinkVisible
-      ..selection = renderObserver.selection
-      ..cursorFocused = renderObserver.hasFocus;
+    this._onResize,
+  }) : _paintState = TerminalPaintState(theme, metrics)
+         ..blinkVisible = blinkVisible
+         ..selection = _renderObserver.selection
+         ..cursorFocused = _renderObserver.hasFocus {
     _atlasHandle = _renderCache.acquireAtlas(
       .fromTheme(
         theme: theme,
