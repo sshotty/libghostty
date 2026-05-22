@@ -285,6 +285,16 @@ void main() {
         expect(renderState.rows, 40);
       });
 
+      test('emits in-band size report when mode 2048 is enabled', () {
+        Uint8List? received;
+        terminal.onWritePty = (data) => received = data;
+        terminal.modeSet(const TerminalMode.inBandResize(), value: true);
+
+        terminal.resize(cols: 100, rows: 40, cellWidthPx: 9, cellHeightPx: 18);
+
+        expect(String.fromCharCodes(received!), '\x1B[48;40;100;720;900t');
+      });
+
       test('clamps cursor', () {
         terminal.write(Uint8List.fromList('\x1b[24;80H'.codeUnits));
         terminal.resize(cols: 40, rows: 10);
