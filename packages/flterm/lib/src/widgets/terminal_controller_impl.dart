@@ -686,6 +686,8 @@ class TerminalControllerImpl extends TerminalController
     required int unshiftedCodepoint,
     required Mods mods,
   }) {
+    // Flutter does not expose consumed modifiers, so this fallback only
+    // accounts for Shift producing a different single-codepoint character.
     if (!mods.hasShift || character == null || unshiftedCodepoint == 0) {
       return const .none();
     }
