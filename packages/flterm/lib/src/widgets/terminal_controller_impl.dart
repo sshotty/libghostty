@@ -35,6 +35,8 @@ class TerminalControllerImpl extends TerminalController
   @override
   final Terminal terminal;
   final _renderState = RenderState();
+  final _rowIterator = RowIterator();
+  final _cellIterator = CellIterator();
   final _keyEncoder = KeyEncoder();
   final _mouseEncoder = MouseEncoder();
   final vt.KeyEvent _keyEvent;
@@ -249,6 +251,8 @@ class TerminalControllerImpl extends TerminalController
     _mouseEvent.dispose();
     _keyEncoder.dispose();
     _mouseEncoder.dispose();
+    _cellIterator.dispose();
+    _rowIterator.dispose();
     _renderState.dispose();
     terminal.dispose();
     super.dispose();
@@ -458,13 +462,13 @@ class TerminalControllerImpl extends TerminalController
 
     var lastScreenRow = -1;
     var lastContentCol = 0;
-    for (var row = 0; row < rows; row++) {
+    _rowIterator.reset(_renderState);
+    while (_rowIterator.next() && _rowIterator.index < rows) {
+      final row = _rowIterator.index;
       var rowLastCol = 0;
-      for (var col = 0; col < cols; col++) {
-        final ref = GridRef.at(terminal, col: col, row: row);
-        final hasContent = ref.graphemes.isNotEmpty;
-        ref.dispose();
-        if (hasContent) rowLastCol = col + 1;
+      _cellIterator.reset(_rowIterator);
+      while (_cellIterator.next() && _cellIterator.col < cols) {
+        if (_cellIterator.hasText) rowLastCol = _cellIterator.col + 1;
       }
       if (rowLastCol > 0) {
         lastScreenRow = row;
