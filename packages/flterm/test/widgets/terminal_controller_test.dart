@@ -482,6 +482,39 @@ void main() {
 
         expect(KittyGraphics.of(controller.terminal)!.image(92), isNull);
       });
+
+      test('initial config applies cursor reset defaults', () {
+        final custom = TerminalControllerImpl(
+          config: const TerminalConfig(
+            cursorStyle: CursorShape.underline,
+            cursorBlink: true,
+          ),
+        );
+        final renderState = RenderState();
+        addTearDown(custom.dispose);
+        addTearDown(renderState.dispose);
+
+        writeTerminalUtf8(custom.terminal, '\x1b[0 q');
+        renderState.update(custom.terminal);
+
+        expect(renderState.cursor.shape, CursorShape.underline);
+        expect(renderState.cursor.blinking, isTrue);
+      });
+
+      test('setter applies cursor reset defaults', () {
+        final renderState = RenderState();
+        addTearDown(renderState.dispose);
+
+        controller.config = const TerminalConfig(
+          cursorStyle: CursorShape.bar,
+          cursorBlink: false,
+        );
+        writeTerminalUtf8(controller.terminal, '\x1b[0 q');
+        renderState.update(controller.terminal);
+
+        expect(renderState.cursor.shape, CursorShape.bar);
+        expect(renderState.cursor.blinking, isFalse);
+      });
     });
 
     group('modeGet and modeSet', () {
