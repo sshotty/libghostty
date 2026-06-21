@@ -927,6 +927,7 @@ class TerminalControllerImpl extends TerminalController
     terminal.onWritePty = _emitOutput;
     terminal.onBell = () => onBell?.call();
     terminal.onTitleChanged = () => onTitleChanged?.call();
+    terminal.onPwdChanged = _handlePwdChanged;
     terminal.onColorScheme = () => _brightness == .light ? .light : .dark;
     terminal.onSize = _handleSizeQuery;
     terminal.onDeviceAttributes = () => _config.deviceAttributes;
@@ -934,6 +935,11 @@ class TerminalControllerImpl extends TerminalController
     terminal.onEnquiry = enquiry.isEmpty
         ? null
         : () => .fromList(utf8.encode(enquiry));
+  }
+
+  void _handlePwdChanged() {
+    onPwdChanged?.call();
+    notifyListeners();
   }
 
   /// Filters out control characters and macOS function key private-use

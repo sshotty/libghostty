@@ -558,6 +558,41 @@ void main() {
       });
     });
 
+    group('pwd', () {
+      test('updates via OSC 7 escape sequence', () {
+        writeTerminalUtf8(controller.terminal, '\x1b]7;file:///tmp\x07');
+
+        expect(controller.pwd, 'file:///tmp');
+      });
+
+      test('notifies listeners on OSC 7 change', () {
+        var notifyCount = 0;
+        controller.addListener(() => notifyCount++);
+
+        writeTerminalUtf8(controller.terminal, '\x1b]7;file:///tmp\x07');
+
+        expect(notifyCount, greaterThan(0));
+      });
+
+      test('fires onPwdChanged callback', () {
+        var fired = false;
+        controller.onPwdChanged = () => fired = true;
+
+        writeTerminalUtf8(controller.terminal, '\x1b]7;file:///tmp\x07');
+
+        expect(fired, isTrue);
+      });
+
+      test('exposes updated value during onPwdChanged callback', () {
+        var pwd = '';
+        controller.onPwdChanged = () => pwd = controller.pwd;
+
+        writeTerminalUtf8(controller.terminal, '\x1b]7;file:///tmp\x07');
+
+        expect(pwd, 'file:///tmp');
+      });
+    });
+
     group('selectWord', () {
       test('selects word at position', () {
         replaceController(const TerminalConfig(cols: 20, rows: 5));
