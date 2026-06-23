@@ -177,10 +177,8 @@ void main() {
         wrap(
           terminal,
           selection: const TestSelection(
-            startRow: 0,
-            startCol: 0,
-            endRow: 0,
-            endCol: 4,
+            start: Position(row: 0, col: 0),
+            end: Position(row: 0, col: 4),
           ),
         ),
       );

@@ -143,15 +143,13 @@ void main() {
         );
 
         customBinding.handleSelectionPress(
-          row: 0,
-          col: 2,
-          position: const Offset(16, 0),
+          cell: const Position(row: 0, col: 2),
+          localPosition: const Offset(16, 0),
           settings: const TerminalGestureSettings(),
         );
         customBinding.updateSelectionDrag(
-          row: 0,
-          col: 4,
-          position: const Offset(32, 0),
+          cell: const Position(row: 0, col: 4),
+          localPosition: const Offset(32, 0),
           rectangle: false,
         );
 
@@ -190,7 +188,10 @@ void main() {
       });
 
       test('clears selection on typing when enabled', () {
-        controller.selectRange(startRow: 0, startCol: 0, endRow: 0, endCol: 4);
+        controller.selectRange(
+          start: const Position(row: 0, col: 0),
+          end: const Position(row: 0, col: 4),
+        );
         controller.onOutput = (_) {};
 
         binding.handleKeyEvent(

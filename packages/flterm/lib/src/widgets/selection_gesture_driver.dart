@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart' show Offset;
 import 'package:libghostty/libghostty.dart'
     show
         GridRef,
+        Position,
         Selection,
         SelectionGesture,
         SelectionGestureBehavior,
@@ -29,15 +30,14 @@ final class SelectionGestureDriver {
   SelectionGestureBehavior get behavior => _gesture.state.behavior;
 
   Selection? autoscroll({
-    required int row,
-    required int col,
-    required Offset position,
+    required Position cell,
+    required Offset localPosition,
     required bool rectangle,
     required SelectionGestureGeometry geometry,
   }) {
     _autoscroll
-      ..setViewport(row: row, col: col)
-      ..setPosition(position.dx, position.dy)
+      ..setViewport(cell)
+      ..setPosition(localPosition.dx, localPosition.dy)
       ..setRectangle(value: rectangle)
       ..setGeometry(geometry);
     _setWordBoundaryCodepoints(_autoscroll);
@@ -54,13 +54,13 @@ final class SelectionGestureDriver {
 
   Selection? drag({
     required GridRef ref,
-    required Offset position,
+    required Offset localPosition,
     required bool rectangle,
     required SelectionGestureGeometry geometry,
   }) {
     _drag
       ..setRef(ref)
-      ..setPosition(position.dx, position.dy)
+      ..setPosition(localPosition.dx, localPosition.dy)
       ..setRectangle(value: rectangle)
       ..setGeometry(geometry);
     _setWordBoundaryCodepoints(_drag);
@@ -69,7 +69,7 @@ final class SelectionGestureDriver {
 
   Selection? press({
     required GridRef ref,
-    required Offset position,
+    required Offset localPosition,
     required TerminalGestureSettings settings,
   }) {
     _wordBoundaryCodepoints = settings.wordBoundaries?.runes.toList(
@@ -77,7 +77,7 @@ final class SelectionGestureDriver {
     );
     _press
       ..setRef(ref)
-      ..setPosition(position.dx, position.dy)
+      ..setPosition(localPosition.dx, localPosition.dy)
       ..setBehaviors(settings.selectionBehaviors)
       ..setRepeatDistance(kDoubleTapSlop)
       ..setRepeatIntervalNs(kDoubleTapTimeout.inMicroseconds * 1000)

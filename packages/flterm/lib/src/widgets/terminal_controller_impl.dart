@@ -420,12 +420,11 @@ class TerminalControllerImpl extends TerminalController
 
   @override
   void handleSelectionPress({
-    required int row,
-    required int col,
-    required Offset position,
+    required Position cell,
+    required Offset localPosition,
     required TerminalGestureSettings settings,
   }) {
-    final ref = _viewportRef(row: row, col: col);
+    final ref = _viewportRef(cell);
     if (ref == null) {
       _setSelection(null, clearIfNull: true);
       return;
@@ -433,7 +432,7 @@ class TerminalControllerImpl extends TerminalController
 
     var selection = _selectionGesture.press(
       ref: ref,
-      position: position,
+      localPosition: localPosition,
       settings: settings,
     );
     if (selection != null &&
@@ -445,8 +444,8 @@ class TerminalControllerImpl extends TerminalController
   }
 
   @override
-  void handleSelectionRelease({required int row, required int col}) {
-    _setSelection(_selectionGesture.release(_viewportRef(row: row, col: col)));
+  void handleSelectionRelease(Position cell) {
+    _setSelection(_selectionGesture.release(_viewportRef(cell)));
   }
 
   @override
@@ -507,17 +506,15 @@ class TerminalControllerImpl extends TerminalController
 
   @override
   void selectRange({
-    required int startRow,
-    required int startCol,
-    required int endRow,
-    required int endCol,
+    required Position start,
+    required Position end,
     PointTag pointTag = .screen,
     bool rectangle = false,
   }) {
     _setSelection(
       .fromRefs(
-        start: .at(terminal, col: startCol, row: startRow, pointTag: pointTag),
-        end: .at(terminal, col: endCol, row: endRow, pointTag: pointTag),
+        start: .at(terminal, start, pointTag: pointTag),
+        end: .at(terminal, end, pointTag: pointTag),
         rectangle: rectangle,
       ),
     );
@@ -564,17 +561,15 @@ class TerminalControllerImpl extends TerminalController
 
   @override
   void updateSelectionAutoscroll({
-    required int row,
-    required int col,
-    required Offset position,
+    required Position cell,
+    required Offset localPosition,
     required bool rectangle,
   }) {
     if (_lastCols <= 0 || _lastRows <= 0) return;
     _setSelection(
       _selectionGesture.autoscroll(
-        row: _clampInt(row, 0, _lastRows - 1),
-        col: _clampInt(col, 0, _lastCols - 1),
-        position: position,
+        cell: _clampViewportPoint(cell),
+        localPosition: localPosition,
         rectangle: rectangle,
         geometry: _selectionGestureGeometry(),
       ),
@@ -584,17 +579,16 @@ class TerminalControllerImpl extends TerminalController
 
   @override
   void updateSelectionDrag({
-    required int row,
-    required int col,
-    required Offset position,
+    required Position cell,
+    required Offset localPosition,
     required bool rectangle,
   }) {
-    final ref = _viewportRef(row: row, col: col);
+    final ref = _viewportRef(cell);
     if (ref == null) return;
     _setSelection(
       _selectionGesture.drag(
         ref: ref,
-        position: position,
+        localPosition: localPosition,
         rectangle: rectangle,
         geometry: _selectionGestureGeometry(),
       ),
@@ -638,6 +632,13 @@ class TerminalControllerImpl extends TerminalController
     if (value < min) return min;
     if (value > max) return max;
     return value;
+  }
+
+  Position _clampViewportPoint(Position position) {
+    return Position(
+      row: _clampInt(position.row, 0, _lastRows - 1),
+      col: _clampInt(position.col, 0, _lastCols - 1),
+    );
   }
 
   bool _consumeCommittedCompositionEditKey(
@@ -737,14 +738,22 @@ class TerminalControllerImpl extends TerminalController
   }
 
   Selection _fullWidthLineSelection(Selection selection) {
-    final start = selection.start.pointIn(.viewport);
-    final end = selection.end.pointIn(.viewport);
+    final start = selection.start.positionIn(.viewport);
+    final end = selection.end.positionIn(.viewport);
     if (start == null || end == null) return selection;
     _ensureGridSize();
     if (_lastCols <= 0) return selection;
     return Selection.fromRefs(
-      start: .at(terminal, row: start.row, col: 0, pointTag: .viewport),
-      end: .at(terminal, row: end.row, col: _lastCols - 1, pointTag: .viewport),
+      start: .at(
+        terminal,
+        Position(row: start.row, col: 0),
+        pointTag: .viewport,
+      ),
+      end: .at(
+        terminal,
+        Position(row: end.row, col: _lastCols - 1),
+        pointTag: .viewport,
+      ),
     );
   }
 
@@ -976,15 +985,10 @@ class TerminalControllerImpl extends TerminalController
     notifyListeners();
   }
 
-  GridRef? _viewportRef({required int row, required int col}) {
+  GridRef? _viewportRef(Position position) {
     _ensureGridSize();
     if (_lastRows <= 0 || _lastCols <= 0) return null;
-    return .at(
-      terminal,
-      row: _clampInt(row, 0, _lastRows - 1),
-      col: _clampInt(col, 0, _lastCols - 1),
-      pointTag: .viewport,
-    );
+    return .at(terminal, _clampViewportPoint(position), pointTag: .viewport);
   }
 
   void _wireTerminalCallbacks() {

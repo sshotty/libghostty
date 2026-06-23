@@ -10,12 +10,18 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:libghostty/libghostty.dart'
-    show Mods, MouseTracking, Selection, SelectionGestureBehaviors, Terminal;
+    show
+        Mods,
+        MouseTracking,
+        Position,
+        Selection,
+        SelectionGestureBehaviors,
+        Terminal;
 
 extension _SelectionEdges on Selection {
-  ({int row, int col}) get _startPoint => start.pointIn(.viewport)!;
+  Position get _startPoint => start.positionIn(.viewport)!;
 
-  ({int row, int col}) get _endPoint => end.pointIn(.viewport)!;
+  Position get _endPoint => end.positionIn(.viewport)!;
 
   bool get _forward {
     final start = _startPoint;

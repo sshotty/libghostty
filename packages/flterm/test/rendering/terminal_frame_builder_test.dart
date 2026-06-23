@@ -272,8 +272,8 @@ void main() {
       () {
         writeUtf8(terminal, 'hello');
         terminal.selection = Selection.fromRefs(
-          start: GridRef.at(terminal, row: 0, col: 1),
-          end: GridRef.at(terminal, row: 0, col: 2),
+          start: GridRef.at(terminal, const Position(row: 0, col: 1)),
+          end: GridRef.at(terminal, const Position(row: 0, col: 2)),
         );
 
         builder.sync(terminal, terminalDirty: true);
@@ -287,7 +287,7 @@ void main() {
       builder.sync(terminal, terminalDirty: true);
 
       expect(state.cursor.visible, isTrue);
-      expect(state.cursor.col, 0);
+      expect(state.cursor.position.col, 0);
       expect(state.cursorAtlasEntry, isNotNull);
     });
 

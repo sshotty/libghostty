@@ -15,9 +15,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:libghostty/libghostty.dart' hide KeyEvent;
 
 extension _SelectionEdges on Selection {
-  ({int row, int col}) get _startPoint => start.pointIn(.viewport)!;
+  Position get _startPoint => start.positionIn(.viewport)!;
 
-  ({int row, int col}) get _endPoint => end.pointIn(.viewport)!;
+  Position get _endPoint => end.positionIn(.viewport)!;
 
   bool get _forward {
     final start = _startPoint;
@@ -589,7 +589,10 @@ void main() {
         wrapInApp(controller: controller, autofocus: true),
       );
       await tester.pump();
-      controller.selectRange(startRow: 0, startCol: 0, endRow: 0, endCol: 4);
+      controller.selectRange(
+        start: const Position(row: 0, col: 0),
+        end: const Position(row: 0, col: 4),
+      );
 
       tester.testTextInput.updateEditingValue(
         const TextEditingValue(
@@ -1145,7 +1148,10 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      controller.selectRange(startRow: 0, startCol: 0, endRow: 0, endCol: 4);
+      controller.selectRange(
+        start: const Position(row: 0, col: 0),
+        end: const Position(row: 0, col: 4),
+      );
       expect(controller.hasSelection, isTrue);
 
       await tester.sendKeyEvent(LogicalKeyboardKey.keyA);
@@ -1161,7 +1167,10 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      controller.selectRange(startRow: 0, startCol: 0, endRow: 0, endCol: 4);
+      controller.selectRange(
+        start: const Position(row: 0, col: 0),
+        end: const Position(row: 0, col: 4),
+      );
 
       await tester.sendKeyDownEvent(LogicalKeyboardKey.shift);
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);

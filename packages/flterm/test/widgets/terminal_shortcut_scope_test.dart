@@ -7,7 +7,7 @@ import 'package:flterm/src/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:libghostty/libghostty.dart' show Terminal;
+import 'package:libghostty/libghostty.dart' show Position, Terminal;
 
 void main() {
   group('TerminalShortcutScope', () {
@@ -59,7 +59,10 @@ void main() {
     group('copy', () {
       testWidgets('copies selected text to clipboard', (tester) async {
         writeUtf8(controller.terminal, 'hello world');
-        controller.selectRange(startRow: 0, startCol: 0, endRow: 0, endCol: 4);
+        controller.selectRange(
+          start: const Position(row: 0, col: 0),
+          end: const Position(row: 0, col: 4),
+        );
 
         String? clipboardText;
         tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(

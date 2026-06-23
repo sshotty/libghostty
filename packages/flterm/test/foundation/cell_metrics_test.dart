@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:flterm/src/foundation/cell_metrics.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:libghostty/libghostty.dart' show Position;
 
 void main() {
   group('CellMetrics', () {
@@ -37,23 +38,41 @@ void main() {
       const metrics = CellMetrics(cellWidth: 8, cellHeight: 16, baseline: 12);
 
       test('floors pixel position to cell coordinates', () {
-        expect(metrics.cellAt(Offset.zero), (0, 0));
-        expect(metrics.cellAt(const Offset(3, 7)), (0, 0));
-        expect(metrics.cellAt(const Offset(8, 16)), (1, 1));
-        expect(metrics.cellAt(const Offset(15.9, 31.9)), (1, 1));
-        expect(metrics.cellAt(const Offset(16, 32)), (2, 2));
-        expect(metrics.cellAt(const Offset(80, 160)), (10, 10));
+        expect(metrics.cellAt(Offset.zero), const Position(row: 0, col: 0));
+        expect(
+          metrics.cellAt(const Offset(3, 7)),
+          const Position(row: 0, col: 0),
+        );
+        expect(
+          metrics.cellAt(const Offset(8, 16)),
+          const Position(row: 1, col: 1),
+        );
+        expect(
+          metrics.cellAt(const Offset(15.9, 31.9)),
+          const Position(row: 1, col: 1),
+        );
+        expect(
+          metrics.cellAt(const Offset(16, 32)),
+          const Position(row: 2, col: 2),
+        );
+        expect(
+          metrics.cellAt(const Offset(80, 160)),
+          const Position(row: 10, col: 10),
+        );
       });
 
       test('negative position produces negative indices', () {
-        final (row, col) = metrics.cellAt(const Offset(-1, -1));
-        expect(row, -1);
-        expect(col, -1);
+        final point = metrics.cellAt(const Offset(-1, -1));
+
+        expect(point, const Position(row: -1, col: -1));
       });
 
       test('zero-dimension metrics produce (0, 0)', () {
         const zero = CellMetrics(cellWidth: 0, cellHeight: 0, baseline: 0);
-        expect(zero.cellAt(const Offset(100, 100)), (0, 0));
+        expect(
+          zero.cellAt(const Offset(100, 100)),
+          const Position(row: 0, col: 0),
+        );
       });
     });
 
@@ -76,17 +95,26 @@ void main() {
       const metrics = CellMetrics(cellWidth: 8, cellHeight: 16, baseline: 12);
 
       test('returns correct rect at origin offset', () {
-        final rect = metrics.cellRect(0, 0, Offset.zero);
+        final rect = metrics.cellRect(
+          const Position(row: 0, col: 0),
+          Offset.zero,
+        );
         expect(rect, const Rect.fromLTWH(0, 0, 8, 16));
       });
 
       test('applies row and col offsets', () {
-        final rect = metrics.cellRect(2, 3, Offset.zero);
+        final rect = metrics.cellRect(
+          const Position(row: 2, col: 3),
+          Offset.zero,
+        );
         expect(rect, const Rect.fromLTWH(24, 32, 8, 16));
       });
 
       test('applies pixel offset', () {
-        final rect = metrics.cellRect(0, 0, const Offset(10, 20));
+        final rect = metrics.cellRect(
+          const Position(row: 0, col: 0),
+          const Offset(10, 20),
+        );
         expect(rect, const Rect.fromLTWH(10, 20, 8, 16));
       });
     });
