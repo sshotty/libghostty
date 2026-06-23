@@ -377,27 +377,25 @@ final class _CursorFrameBuilder {
     final inViewport =
         cursor.visible &&
         (scrollbackLen <= 0 || scrollbar.offset >= scrollbackLen) &&
-        cursor.row >= 0 &&
-        cursor.row < _state.rows &&
-        cursor.col >= 0 &&
-        cursor.col < _state.cols;
+        cursor.position.row >= 0 &&
+        cursor.position.row < _state.rows &&
+        cursor.position.col >= 0 &&
+        cursor.position.col < _state.cols;
 
     if (!inViewport) {
       _hide(cursor);
       return;
     }
 
-    final adjustedCursor = cursor.wideTail && cursor.col > 0
-        ? cursor.copyWith(col: cursor.col - 1)
+    final adjustedCursor = cursor.wideTail && cursor.position.col > 0
+        ? cursor.copyWith(
+            position: cursor.position.copyWith(col: cursor.position.col - 1),
+          )
         : cursor;
     final effectiveCursor = adjustedCursor.shape == CursorShape.block
         ? adjustedCursor.copyWith(shape: _state.theme.cursor.shape)
         : adjustedCursor;
-    final ref = GridRef.at(
-      terminal,
-      col: effectiveCursor.col,
-      row: effectiveCursor.row,
-    );
+    final ref = GridRef.at(terminal, effectiveCursor.position);
     final cell = _CursorCellSnapshot(ref.content, ref.style, wide: ref.isWide);
 
     _cursor = effectiveCursor;
@@ -792,10 +790,10 @@ final class _PreeditRange {
     required int cols,
   }) {
     if (!cursor.visible ||
-        cursor.row < 0 ||
-        cursor.row >= rows ||
-        cursor.col < 0 ||
-        cursor.col >= cols ||
+        cursor.position.row < 0 ||
+        cursor.position.row >= rows ||
+        cursor.position.col < 0 ||
+        cursor.position.col >= cols ||
         rows <= 0 ||
         cols <= 0) {
       return null;
@@ -804,14 +802,14 @@ final class _PreeditRange {
     final preedit = _PreeditText.parse(text);
     if (preedit.isEmpty) return null;
 
-    final startCol = preedit.startCol(cursor.col, cols);
+    final startCol = preedit.startCol(cursor.position.col, cols);
     final visible = preedit.visibleSuffix(cols - startCol);
     final visibleWidth = visible.width;
     final endCol = startCol + visibleWidth;
     if (startCol >= endCol) return null;
 
     return _PreeditRange(
-      row: cursor.row,
+      row: cursor.position.row,
       startCol: startCol,
       endCol: endCol,
       codepointOffset: visible.codepointOffset,

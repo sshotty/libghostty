@@ -1,5 +1,6 @@
 import 'dart:ui';
 
+import 'package:libghostty/libghostty.dart' show Position;
 import 'package:meta/meta.dart';
 
 /// Pixel dimensions of a single terminal cell, derived from font metrics.
@@ -17,7 +18,7 @@ import 'package:meta/meta.dart';
 ///   baseline: 13.0,
 /// );
 /// final (cols, rows) = metrics.gridSize(width, height);
-/// final rect = metrics.cellRect(3, 10, Offset.zero);
+/// final rect = metrics.cellRect(const Position(row: 3, col: 10), .zero);
 /// ```
 @immutable
 final class CellMetrics {
@@ -108,10 +109,10 @@ final class CellMetrics {
   /// Returns `(0, 0)` for any axis where the cell dimension is zero.
   /// The position is not clamped to the grid, so callers should bounds-check
   /// the result against the terminal dimensions.
-  (int row, int col) cellAt(Offset position) {
+  Position cellAt(Offset position) {
     final row = cellHeight > 0 ? (position.dy / cellHeight).floor() : 0;
     final col = cellWidth > 0 ? (position.dx / cellWidth).floor() : 0;
-    return (row, col);
+    return Position(row: row, col: col);
   }
 
   /// Returns the pixel rect for a horizontal range of cells on [row].
@@ -128,8 +129,8 @@ final class CellMetrics {
   }
 
   /// Returns the pixel rect for a single cell at ([row], [col]).
-  Rect cellRect(int row, int col, Offset offset) {
-    return cellRangeRect(row, col, col + 1, offset);
+  Rect cellRect(Position position, Offset offset) {
+    return cellRangeRect(position.row, position.col, position.col + 1, offset);
   }
 
   /// Computes how many columns and rows fit in the given pixel dimensions.

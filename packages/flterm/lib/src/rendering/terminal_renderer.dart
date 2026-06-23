@@ -232,12 +232,12 @@ class TerminalRenderBox extends RenderBox {
     }
 
     final cursor = _paintState.cursor;
-    final row = cursor.row.clamp(0, rows - 1);
-    final rawCol = cursor.wideTail && cursor.col > 0
-        ? cursor.col - 1
-        : cursor.col;
+    final row = cursor.position.row.clamp(0, rows - 1);
+    final rawCol = cursor.wideTail && cursor.position.col > 0
+        ? cursor.position.col - 1
+        : cursor.position.col;
     final col = rawCol.clamp(0, cols - 1);
-    return metrics.cellRect(row, col, .zero);
+    return metrics.cellRect(Position(row: row, col: col), .zero);
   }
 
   /// Current terminal composing rect in this render box's local coordinates.

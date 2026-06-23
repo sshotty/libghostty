@@ -71,31 +71,28 @@ abstract interface class TerminalViewBinding {
 
   /// Applies a press selection gesture.
   void handleSelectionPress({
-    required int row,
-    required int col,
-    required Offset position,
+    required Position cell,
+    required Offset localPosition,
     required TerminalGestureSettings settings,
   });
 
   /// Applies a release selection gesture.
-  void handleSelectionRelease({required int row, required int col});
+  void handleSelectionRelease(Position cell);
 
   /// Requests keyboard focus for the attached view.
   void requestFocus();
 
   /// Applies one autoscroll tick for an active drag selection.
   void updateSelectionAutoscroll({
-    required int row,
-    required int col,
-    required Offset position,
+    required Position cell,
+    required Offset localPosition,
     required bool rectangle,
   });
 
   /// Updates an active drag selection.
   void updateSelectionDrag({
-    required int row,
-    required int col,
-    required Offset position,
+    required Position cell,
+    required Offset localPosition,
     required bool rectangle,
   });
 

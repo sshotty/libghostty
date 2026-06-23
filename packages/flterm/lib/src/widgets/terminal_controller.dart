@@ -190,10 +190,8 @@ abstract class TerminalController extends ChangeNotifier
   /// [PointTag.viewport] for currently visible rows. When [rectangle] is
   /// true, the endpoints describe opposite corners of a block selection.
   void selectRange({
-    required int startRow,
-    required int startCol,
-    required int endRow,
-    required int endCol,
+    required Position start,
+    required Position end,
     PointTag pointTag = .screen,
     bool rectangle = false,
   });

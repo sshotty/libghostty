@@ -16,6 +16,7 @@ export 'package:libghostty/libghostty.dart'
         Mods,
         MouseTracking,
         PointTag,
+        Position,
         Scrollbar,
         SelectionGestureBehavior,
         SelectionGestureBehaviors,

@@ -380,10 +380,8 @@ void main() {
           terminal,
           metrics,
           selection: const TestSelection(
-            startRow: 0,
-            startCol: 0,
-            endRow: 1,
-            endCol: 3,
+            start: Position(row: 0, col: 0),
+            end: Position(row: 1, col: 3),
           ),
         );
         await expectLater(

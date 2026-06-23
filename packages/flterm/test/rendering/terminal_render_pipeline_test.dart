@@ -92,8 +92,8 @@ void main() {
       pipeline.sync(terminal, terminalDirty: true);
 
       terminal.selection = Selection.fromRefs(
-        start: GridRef.at(terminal, row: 0, col: 1),
-        end: GridRef.at(terminal, row: 0, col: 2),
+        start: GridRef.at(terminal, const Position(row: 0, col: 1)),
+        end: GridRef.at(terminal, const Position(row: 0, col: 2)),
       );
 
       pipeline.sync(terminal, terminalDirty: true);

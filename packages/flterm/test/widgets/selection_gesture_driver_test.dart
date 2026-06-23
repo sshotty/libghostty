@@ -28,7 +28,7 @@ void main() {
     }
 
     GridRef refAt({required int col, required int row}) {
-      return GridRef.at(terminal, col: col, row: row);
+      return GridRef.at(terminal, Position(row: row, col: col));
     }
 
     group('drag', () {
@@ -36,7 +36,7 @@ void main() {
         writeUtf8('alpha_beta gamma');
         driver.press(
           ref: refAt(col: 11, row: 0),
-          position: const Offset(88, 0),
+          localPosition: const Offset(88, 0),
           settings: const TerminalGestureSettings(
             selectionBehaviors: SelectionGestureBehaviors(
               singleClick: .word,
@@ -49,7 +49,7 @@ void main() {
 
         final selection = driver.drag(
           ref: refAt(col: 6, row: 0),
-          position: const Offset(48, 0),
+          localPosition: const Offset(48, 0),
           rectangle: false,
           geometry: const SelectionGestureGeometry(
             columns: 20,

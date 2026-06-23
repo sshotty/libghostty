@@ -3,7 +3,8 @@ import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
-import 'package:libghostty/libghostty.dart' show MouseAction, MouseTracking;
+import 'package:libghostty/libghostty.dart'
+    show MouseAction, MouseTracking, Position;
 import 'package:meta/meta.dart';
 
 import '../foundation.dart';
@@ -41,7 +42,7 @@ class TerminalGestureDetector extends StatefulWidget {
 
 class _TerminalGestureDetectorState extends State<TerminalGestureDetector> {
   _DragState? _drag;
-  _PressState? _press;
+  Position? _pressCell;
   Timer? _autoScrollTimer;
 
   TerminalViewBinding get _binding => widget.binding;
@@ -77,7 +78,7 @@ class _TerminalGestureDetectorState extends State<TerminalGestureDetector> {
       _binding.clearSelection();
       _stopAutoScroll();
       _drag = null;
-      _press = null;
+      _pressCell = null;
     }
   }
 
@@ -98,17 +99,16 @@ class _TerminalGestureDetectorState extends State<TerminalGestureDetector> {
     }
 
     _binding.updateSelectionAutoscroll(
-      row: drag.row,
-      col: drag.col,
-      position: drag.position,
+      cell: drag.cell,
+      localPosition: drag.localPosition,
       rectangle: drag.lastRectangle,
     );
   }
 
   void _cancelSelectionPress() {
-    if (_press == null) return;
+    if (_pressCell == null) return;
     _binding.cancelSelectionGesture();
-    _press = null;
+    _pressCell = null;
   }
 
   int _clampInt(int value, int min, int max) {
@@ -120,7 +120,7 @@ class _TerminalGestureDetectorState extends State<TerminalGestureDetector> {
   void _endDrag() {
     final drag = _drag;
     if (drag != null) {
-      _releaseSelectionPress(row: drag.row, col: drag.col);
+      _releaseSelectionPress(drag.cell);
     } else {
       _releaseSelectionPress();
     }
@@ -138,7 +138,7 @@ class _TerminalGestureDetectorState extends State<TerminalGestureDetector> {
       return;
     }
 
-    _startDrag(details.localPosition, beginPress: _press == null);
+    _startDrag(details.localPosition, beginPress: _pressCell == null);
   }
 
   void _handleDragUpdate(DragUpdateDetails details) {
@@ -159,21 +159,20 @@ class _TerminalGestureDetectorState extends State<TerminalGestureDetector> {
     _startDrag(
       details.localPosition,
       rectangle: widget.settings.longPressSelectionShape == .rectangle,
-      beginPress: _press == null,
+      beginPress: _pressCell == null,
     );
   }
 
   void _handleLongPressUp() => _endDrag();
 
   void _handleSelectionPress(Offset position) {
-    final (row, col) = widget.metrics.cellAt(position);
+    final cell = widget.metrics.cellAt(position);
     _binding.handleSelectionPress(
-      row: row,
-      col: col,
-      position: position,
+      cell: cell,
+      localPosition: position,
       settings: widget.settings,
     );
-    _press = _PressState(row, col);
+    _pressCell = cell;
   }
 
   void _handleTapDown(TapDownDetails details) {
@@ -183,12 +182,11 @@ class _TerminalGestureDetectorState extends State<TerminalGestureDetector> {
   }
 
   void _handleTapUp(TapUpDetails details) {
-    if (_press == null &&
+    if (_pressCell == null &&
         _isMouseTracked(HardwareKeyboard.instance.isShiftPressed)) {
       return;
     }
-    final (row, col) = widget.metrics.cellAt(details.localPosition);
-    _releaseSelectionPress(row: row, col: col);
+    _releaseSelectionPress(widget.metrics.cellAt(details.localPosition));
   }
 
   void _handleTrackedDown(PointerDownEvent event) {
@@ -228,14 +226,11 @@ class _TerminalGestureDetectorState extends State<TerminalGestureDetector> {
         !_binding.virtualMods.hasShift;
   }
 
-  void _releaseSelectionPress({int? row, int? col}) {
-    final press = _press;
-    if (press == null) return;
-    _binding.handleSelectionRelease(
-      row: row ?? press.row,
-      col: col ?? press.col,
-    );
-    _press = null;
+  void _releaseSelectionPress([Position? cell]) {
+    cell ??= _pressCell;
+    if (cell == null) return;
+    _binding.handleSelectionRelease(cell);
+    _pressCell = null;
   }
 
   void _sendMouseEvent(MouseAction action, Offset position) {
@@ -260,12 +255,10 @@ class _TerminalGestureDetectorState extends State<TerminalGestureDetector> {
     bool rectangle = false,
     bool beginPress = false,
   }) {
-    final (row, col) = widget.metrics.cellAt(position);
+    final cell = widget.metrics.cellAt(position);
     final block = rectangle || _isBlockModifierPressed();
-    _drag = _DragState(row, col, position, baseRectangle: block);
-    if (beginPress) {
-      _handleSelectionPress(position);
-    }
+    _drag = _DragState(cell, position, baseRectangle: block);
+    if (beginPress) _handleSelectionPress(position);
   }
 
   void _stopAutoScroll() {
@@ -276,16 +269,15 @@ class _TerminalGestureDetectorState extends State<TerminalGestureDetector> {
   void _updateDrag(Offset position) {
     final drag = _drag;
     if (drag == null) return;
-    final (row, col) = widget.metrics.cellAt(position);
-    drag.row = row;
-    drag.col = col;
-    drag.position = position;
+    final cell = widget.metrics.cellAt(position);
+    drag.cell = cell;
+    drag.localPosition = position;
 
     final visibleRows = widget.visibleRows;
     if (visibleRows > 0) {
-      if (row < 0) {
+      if (cell.row < 0) {
         _startAutoScroll();
-      } else if (row >= visibleRows) {
+      } else if (cell.row >= visibleRows) {
         _startAutoScroll();
       } else {
         _stopAutoScroll();
@@ -293,43 +285,31 @@ class _TerminalGestureDetectorState extends State<TerminalGestureDetector> {
     }
 
     final clampedRow = visibleRows > 0
-        ? _clampInt(row, 0, visibleRows - 1)
-        : row;
+        ? _clampInt(cell.row, 0, visibleRows - 1)
+        : cell.row;
+    final clampedCell = Position(row: clampedRow, col: cell.col);
     final rectangle = drag.baseRectangle || _isBlockModifierPressed();
-    if (clampedRow == drag.lastRow &&
-        col == drag.lastCol &&
-        rectangle == drag.lastRectangle) {
+    if (clampedCell == drag.lastCell && rectangle == drag.lastRectangle) {
       return;
     }
-    drag.lastRow = clampedRow;
-    drag.lastCol = col;
+    drag.lastCell = clampedCell;
     drag.lastRectangle = rectangle;
 
     _binding.updateSelectionDrag(
-      row: clampedRow,
-      col: col,
-      position: position,
+      cell: clampedCell,
+      localPosition: position,
       rectangle: rectangle,
     );
   }
 }
 
 class _DragState {
-  int row;
-  int col;
-  Offset position;
+  Position cell;
+  Offset localPosition;
   final bool baseRectangle;
   bool lastRectangle;
-  int? lastRow;
-  int? lastCol;
+  Position? lastCell;
 
-  _DragState(this.row, this.col, this.position, {required this.baseRectangle})
+  _DragState(this.cell, this.localPosition, {required this.baseRectangle})
     : lastRectangle = baseRectangle;
-}
-
-class _PressState {
-  final int row;
-  final int col;
-
-  _PressState(this.row, this.col);
 }

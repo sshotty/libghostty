@@ -89,19 +89,28 @@ void main() {
         var notified = false;
         controller.addListener(() => notified = true);
 
-        controller.selectRange(startRow: 0, startCol: 0, endRow: 0, endCol: 4);
+        controller.selectRange(
+          start: const Position(row: 0, col: 0),
+          end: const Position(row: 0, col: 4),
+        );
 
         expect(notified, isTrue);
         expect(controller.hasSelection, isTrue);
       });
 
       test('selectRange skips notification when value is unchanged', () {
-        controller.selectRange(startRow: 0, startCol: 0, endRow: 0, endCol: 4);
+        controller.selectRange(
+          start: const Position(row: 0, col: 0),
+          end: const Position(row: 0, col: 4),
+        );
 
         var notified = false;
         controller.addListener(() => notified = true);
 
-        controller.selectRange(startRow: 0, startCol: 0, endRow: 0, endCol: 4);
+        controller.selectRange(
+          start: const Position(row: 0, col: 0),
+          end: const Position(row: 0, col: 4),
+        );
 
         expect(notified, isFalse);
       });
@@ -113,7 +122,10 @@ void main() {
         controller.clearSelection();
         expect(notifyCount, 0);
 
-        controller.selectRange(startRow: 0, startCol: 0, endRow: 0, endCol: 4);
+        controller.selectRange(
+          start: const Position(row: 0, col: 0),
+          end: const Position(row: 0, col: 4),
+        );
         notifyCount = 0;
 
         controller.clearSelection();
@@ -164,7 +176,10 @@ void main() {
           final offset = scrollBack(custom);
           expect(offset, lessThan(custom.scrollbackRows));
 
-          custom.selectRange(startRow: 0, startCol: 0, endRow: 0, endCol: 4);
+          custom.selectRange(
+            start: const Position(row: 0, col: 0),
+            end: const Position(row: 0, col: 4),
+          );
 
           expect(custom.terminal.scrollbar.offset, offset);
         },
@@ -175,7 +190,10 @@ void main() {
         () {
           final custom = outputFollowController();
           writeNumberedLines(custom);
-          custom.selectRange(startRow: 0, startCol: 0, endRow: 0, endCol: 4);
+          custom.selectRange(
+            start: const Position(row: 0, col: 0),
+            end: const Position(row: 0, col: 4),
+          );
           custom.terminal.scrollViewport(-5);
           final offset = custom.terminal.scrollbar.offset;
           expect(offset, lessThan(custom.scrollbackRows));
@@ -218,7 +236,10 @@ void main() {
         replaceController(const TerminalConfig(cols: 20, rows: 5));
         writeControllerUtf8(controller, 'hello world');
 
-        controller.selectRange(startRow: 0, startCol: 0, endRow: 0, endCol: 4);
+        controller.selectRange(
+          start: const Position(row: 0, col: 0),
+          end: const Position(row: 0, col: 4),
+        );
 
         expect(controller.selectedText(), 'hello');
       });
@@ -227,7 +248,10 @@ void main() {
         replaceController(const TerminalConfig(cols: 20, rows: 5));
         writeControllerUtf8(controller, '\x1b[31mhi\x1b[0m');
 
-        controller.selectRange(startRow: 0, startCol: 0, endRow: 0, endCol: 1);
+        controller.selectRange(
+          start: const Position(row: 0, col: 0),
+          end: const Position(row: 0, col: 1),
+        );
 
         expect(controller.selectedText(), 'hi');
         expect(
@@ -244,14 +268,15 @@ void main() {
         replaceController(const TerminalConfig(cols: 20, rows: 5));
         controller.write(Uint8List.fromList(utf8.encode('日本語')));
 
-        controller.selectRange(startRow: 0, startCol: 0, endRow: 0, endCol: 4);
+        controller.selectRange(
+          start: const Position(row: 0, col: 0),
+          end: const Position(row: 0, col: 4),
+        );
         expect(controller.selectedText(), '日本語');
 
         controller.selectRange(
-          startRow: 0,
-          startCol: 0,
-          endRow: 0,
-          endCol: 4,
+          start: const Position(row: 0, col: 0),
+          end: const Position(row: 0, col: 4),
           rectangle: true,
         );
         expect(controller.selectedText(), '日本語');
@@ -299,10 +324,8 @@ void main() {
         writeLines(['aaa', 'bbb', 'ccc']);
         expect(
           () => smallController.selectRange(
-            startRow: 0,
-            startCol: 0,
-            endRow: 99,
-            endCol: 19,
+            start: const Position(row: 0, col: 0),
+            end: const Position(row: 99, col: 19),
           ),
           throwsA(isA<LibGhosttyException>()),
         );
@@ -351,10 +374,8 @@ void main() {
       test('selectedText in block mode inserts newlines between rows', () {
         writeLines(['aaaa', 'bbbb', 'cccc']);
         smallController.selectRange(
-          startRow: 0,
-          startCol: 1,
-          endRow: 2,
-          endCol: 2,
+          start: const Position(row: 0, col: 1),
+          end: const Position(row: 2, col: 2),
           rectangle: true,
         );
 
@@ -371,10 +392,8 @@ void main() {
         expect(smallController.scrollbackRows, 1);
 
         smallController.selectRange(
-          startRow: 0,
-          startCol: 0,
-          endRow: 1,
-          endCol: 2,
+          start: const Position(row: 0, col: 0),
+          end: const Position(row: 1, col: 2),
         );
 
         final text = smallController.selectedText();
@@ -415,7 +434,10 @@ void main() {
       });
 
       test('clears selection', () {
-        controller.selectRange(startRow: 0, startCol: 0, endRow: 1, endCol: 4);
+        controller.selectRange(
+          start: const Position(row: 0, col: 0),
+          end: const Position(row: 1, col: 4),
+        );
 
         controller.clear();
 

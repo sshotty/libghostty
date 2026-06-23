@@ -34,10 +34,10 @@ class CursorPainter implements TerminalPainter {
     final cursor = _state.cursor;
     if (_state.preeditActive) return;
     if (!cursor.visible ||
-        cursor.row < 0 ||
-        cursor.row >= _state.rows ||
-        cursor.col < 0 ||
-        cursor.col >= _state.cols ||
+        cursor.position.row < 0 ||
+        cursor.position.row >= _state.rows ||
+        cursor.position.col < 0 ||
+        cursor.position.col >= _state.cols ||
         !_state.blinkVisible) {
       return;
     }
@@ -49,11 +49,16 @@ class CursorPainter implements TerminalPainter {
       (opacity << 24) | (_state.cursorColorArgb & 0x00FFFFFF),
     );
 
-    final endCol = (cursor.col + (_state.cursorWide ? 2 : 1)).clamp(
+    final endCol = (cursor.position.col + (_state.cursorWide ? 2 : 1)).clamp(
       0,
       _state.cols,
     );
-    final rect = metrics.cellRangeRect(cursor.row, cursor.col, endCol, .zero);
+    final rect = metrics.cellRangeRect(
+      cursor.position.row,
+      cursor.position.col,
+      endCol,
+      .zero,
+    );
     final CursorShape shape = switch (cursor.passwordInput && focused) {
       true => .block,
       false => !focused && cursor.shape == .block ? .blockHollow : cursor.shape,
@@ -94,8 +99,8 @@ class CursorPainter implements TerminalPainter {
                 entry.srcBottom,
               ),
               Rect.fromLTWH(
-                cursor.col * metrics.cellWidth + sourceBearingX,
-                cursor.row * metrics.cellHeight + sourceBearingY,
+                cursor.position.col * metrics.cellWidth + sourceBearingX,
+                cursor.position.row * metrics.cellHeight + sourceBearingY,
                 (entry.srcRight - entry.srcLeft) * inverseDpr,
                 (entry.srcBottom - entry.srcTop) * inverseDpr,
               ),

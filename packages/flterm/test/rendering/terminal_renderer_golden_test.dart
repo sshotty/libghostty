@@ -397,10 +397,8 @@ void main() {
         await pump(
           tester,
           selection: const TestSelection(
-            startRow: 0,
-            startCol: 0,
-            endRow: 0,
-            endCol: 4,
+            start: Position(row: 0, col: 0),
+            end: Position(row: 0, col: 4),
           ),
         );
         await expectLater(
@@ -414,10 +412,8 @@ void main() {
         await pump(
           tester,
           selection: const TestSelection(
-            startRow: 0,
-            startCol: 5,
-            endRow: 1,
-            endCol: 3,
+            start: Position(row: 0, col: 5),
+            end: Position(row: 1, col: 3),
           ),
         );
         await expectLater(
@@ -431,10 +427,8 @@ void main() {
         await pump(
           tester,
           selection: const TestSelection(
-            startRow: 0,
-            startCol: 4,
-            endRow: 0,
-            endCol: 0,
+            start: Position(row: 0, col: 4),
+            end: Position(row: 0, col: 0),
           ),
         );
         await expectLater(
@@ -448,10 +442,8 @@ void main() {
         await pump(
           tester,
           selection: const TestSelection(
-            startRow: 0,
-            startCol: 5,
-            endRow: 2,
-            endCol: 3,
+            start: Position(row: 0, col: 5),
+            end: Position(row: 2, col: 3),
           ),
         );
         await expectLater(
@@ -465,10 +457,8 @@ void main() {
         await pump(
           tester,
           selection: const TestSelection(
-            startRow: 2,
-            startCol: 3,
-            endRow: 0,
-            endCol: 5,
+            start: Position(row: 2, col: 3),
+            end: Position(row: 0, col: 5),
           ),
         );
         await expectLater(
@@ -482,10 +472,8 @@ void main() {
         await pump(
           tester,
           selection: const TestSelection(
-            startRow: 0,
-            startCol: 0,
-            endRow: 0,
-            endCol: defaultCols - 1,
+            start: Position(row: 0, col: 0),
+            end: Position(row: 0, col: defaultCols - 1),
           ),
         );
         await expectLater(
@@ -499,10 +487,8 @@ void main() {
         await pump(
           tester,
           selection: const TestSelection(
-            startRow: 0,
-            startCol: 3,
-            endRow: 0,
-            endCol: 3,
+            start: Position(row: 0, col: 3),
+            end: Position(row: 0, col: 3),
           ),
         );
         await expectLater(
@@ -516,10 +502,8 @@ void main() {
         await pump(
           tester,
           selection: const TestSelection(
-            startRow: 0,
-            startCol: 0,
-            endRow: 2,
-            endCol: 3,
+            start: Position(row: 0, col: 0),
+            end: Position(row: 2, col: 3),
           ),
         );
         await expectLater(
@@ -533,10 +517,8 @@ void main() {
         await pump(
           tester,
           selection: const TestSelection(
-            startRow: 0,
-            startCol: 5,
-            endRow: 2,
-            endCol: defaultCols - 1,
+            start: Position(row: 0, col: 5),
+            end: Position(row: 2, col: defaultCols - 1),
           ),
         );
         await expectLater(
@@ -550,10 +532,8 @@ void main() {
         await pump(
           tester,
           selection: const TestSelection(
-            startRow: -1,
-            startCol: -2,
-            endRow: 1,
-            endCol: 29,
+            start: Position(row: -1, col: -2),
+            end: Position(row: 1, col: 29),
           ),
         );
         await expectLater(
@@ -569,10 +549,8 @@ void main() {
         await pump(
           tester,
           selection: const TestSelection(
-            startRow: 0,
-            startCol: 2,
-            endRow: 0,
-            endCol: 6,
+            start: Position(row: 0, col: 2),
+            end: Position(row: 0, col: 6),
             rectangle: true,
           ),
         );
@@ -587,10 +565,8 @@ void main() {
         await pump(
           tester,
           selection: const TestSelection(
-            startRow: 0,
-            startCol: 2,
-            endRow: 2,
-            endCol: 6,
+            start: Position(row: 0, col: 2),
+            end: Position(row: 2, col: 6),
             rectangle: true,
           ),
         );
@@ -605,10 +581,8 @@ void main() {
         await pump(
           tester,
           selection: const TestSelection(
-            startRow: 2,
-            startCol: 6,
-            endRow: 0,
-            endCol: 2,
+            start: Position(row: 2, col: 6),
+            end: Position(row: 0, col: 2),
             rectangle: true,
           ),
         );
@@ -623,10 +597,8 @@ void main() {
         await pump(
           tester,
           selection: const TestSelection(
-            startRow: 0,
-            startCol: 3,
-            endRow: 0,
-            endCol: 3,
+            start: Position(row: 0, col: 3),
+            end: Position(row: 0, col: 3),
             rectangle: true,
           ),
         );
@@ -641,10 +613,8 @@ void main() {
         await pump(
           tester,
           selection: const TestSelection(
-            startRow: 0,
-            startCol: 6,
-            endRow: 0,
-            endCol: 2,
+            start: Position(row: 0, col: 6),
+            end: Position(row: 0, col: 2),
             rectangle: true,
           ),
         );
@@ -659,10 +629,8 @@ void main() {
         await pump(
           tester,
           selection: const TestSelection(
-            startRow: -1,
-            startCol: 2,
-            endRow: 5,
-            endCol: 6,
+            start: Position(row: -1, col: 2),
+            end: Position(row: 5, col: 6),
             rectangle: true,
           ),
         );
@@ -718,10 +686,8 @@ void main() {
             ),
           ),
           selection: const TestSelection(
-            startRow: 0,
-            startCol: 0,
-            endRow: 0,
-            endCol: 12,
+            start: Position(row: 0, col: 0),
+            end: Position(row: 0, col: 12),
           ),
         );
         await expectLater(
@@ -811,10 +777,8 @@ void main() {
             ),
           ),
           selection: const TestSelection(
-            startRow: 0,
-            startCol: 0,
-            endRow: 0,
-            endCol: 8,
+            start: Position(row: 0, col: 0),
+            end: Position(row: 0, col: 8),
           ),
         );
         await expectLater(
@@ -836,10 +800,8 @@ void main() {
             ),
           ),
           selection: const TestSelection(
-            startRow: 0,
-            startCol: 0,
-            endRow: 0,
-            endCol: 1,
+            start: Position(row: 0, col: 0),
+            end: Position(row: 0, col: 1),
           ),
         );
         await expectLater(
