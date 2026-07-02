@@ -12,12 +12,14 @@ export 'package:libghostty/libghostty.dart'
         Formatter,
         FormatterExtra,
         FormatterFormat,
+        GridRef,
         Key,
         Mods,
         MouseTracking,
         PointTag,
         Position,
         Scrollbar,
+        Selection,
         SelectionGestureBehavior,
         SelectionGestureBehaviors,
         TerminalMode,
@@ -30,6 +32,7 @@ export 'src/foundation/cell_range.dart' show CellRange;
 export 'src/foundation/color_palette.dart' show ColorPalette;
 export 'src/foundation/dynamic_color.dart' show DynamicColor;
 export 'src/foundation/input_types.dart' show KeyboardState, MouseAutoHide;
+export 'src/foundation/searcher.dart' show SearchHit, Searcher;
 export 'src/foundation/terminal_config.dart'
     show ScrollToBottom, TerminalConfig;
 export 'src/foundation/terminal_gesture_settings.dart'

@@ -326,6 +326,7 @@ class _TerminalViewState extends State<TerminalView> {
                         preeditText: _binding.preeditText,
                         blinkVisible: _blinkVisible,
                         linkSnapshot: _links.snapshot(),
+                        searchHits: _controller.searchHits,
                         onResize: _handleResize,
                       ),
                     ),

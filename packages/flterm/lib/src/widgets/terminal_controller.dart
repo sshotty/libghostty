@@ -71,6 +71,12 @@ abstract class TerminalController extends ChangeNotifier
   /// Whether the terminal currently has an active text selection.
   bool get hasSelection;
 
+  /// The underlying terminal instance.
+  ///
+  /// Exposed for use with [Searcher], [RenderState], and other APIs
+  /// that require direct access to the native terminal handle.
+  Terminal get terminal;
+
   /// Current soft keyboard state.
   KeyboardState get keyboardState;
 
@@ -165,6 +171,17 @@ abstract class TerminalController extends ChangeNotifier
   /// Scrolls the viewport to the top of the scrollback history.
   void scrollToTop();
 
+  /// Current search highlights displayed on the terminal.
+  ///
+  /// Set via [setSearchHighlights]. Returns an unmodifiable empty list
+  /// when no search is active.
+  List<SearchHit> get searchHits;
+
+  /// Sets the search highlights to display on the terminal.
+  ///
+  /// Pass an empty list to clear all highlights.
+  void setSearchHighlights(List<SearchHit> hits);
+
   /// Selects all terminal content including scrollback.
   void selectAll();
 
@@ -216,6 +233,17 @@ abstract class TerminalController extends ChangeNotifier
 
   /// Removes keyboard focus from the attached [TerminalView].
   void unfocus();
+
+  /// Places an image in the terminal via the Kitty graphics protocol.
+  ///
+  /// Returns true if the image was queued for placement. Returns false
+  /// when [bytes] is empty or exceeds the terminal's image storage limit.
+  /// The [placementId] can be used to reference the image for later
+  /// replacement or deletion.
+  Future<bool> pasteImage({
+    required Uint8List bytes,
+    int? placementId,
+  });
 
   /// Feeds raw bytes from the backend into the terminal.
   ///

@@ -9,6 +9,7 @@ import 'package:libghostty/libghostty.dart' hide KeyEvent;
 import 'package:meta/meta.dart';
 
 import '../foundation.dart';
+import '../foundation/kitty_graphics_protocol.dart';
 import '../rendering/kitty_png_decoder.dart';
 import 'selection_gesture_driver.dart';
 import 'terminal_controller.dart';
@@ -54,6 +55,7 @@ class TerminalControllerImpl extends TerminalController
   var _cursorBlinking = true;
   var _wasFocused = false;
   var _selectionMutationDepth = 0;
+  var _searchHits = const <SearchHit>[];
 
   CellMetrics _lastMetrics = const .new(
     cellWidth: 0,
@@ -476,8 +478,11 @@ class TerminalControllerImpl extends TerminalController
     terminal.scrollToBottom();
     final controller = _scrollController;
     if (controller != null && controller.hasClients) {
-      final max = controller.position.maxScrollExtent;
-      if (max.isFinite) controller.jumpTo(max);
+      final pos = controller.position;
+      if (pos.hasContentDimensions) {
+        final max = pos.maxScrollExtent;
+        if (max.isFinite) controller.jumpTo(max);
+      }
     }
   }
 
@@ -491,6 +496,15 @@ class TerminalControllerImpl extends TerminalController
 
   @override
   void selectAll() => _setSelection(terminal.selectAll());
+
+  @override
+  List<SearchHit> get searchHits => _searchHits;
+
+  @override
+  void setSearchHighlights(List<SearchHit> hits) {
+    _searchHits = List.unmodifiable(hits);
+    notifyListeners();
+  }
 
   @override
   String selectedText({FormatterFormat format = .plain}) {
@@ -558,6 +572,21 @@ class TerminalControllerImpl extends TerminalController
 
   @override
   void unfocus() => _focusNode?.unfocus();
+
+  @override
+  Future<bool> pasteImage({
+    required Uint8List bytes,
+    int? placementId,
+  }) async {
+    if (bytes.isEmpty) return false;
+    final limit = terminal.kittyImageStorageLimit;
+    if (limit != null && bytes.length > limit) return false;
+    terminal.write(KittyGraphicsProtocol.imageEscape(
+      placementId: placementId ?? 0,
+      imageBytes: bytes,
+    ));
+    return true;
+  }
 
   @override
   void updateSelectionAutoscroll({

@@ -73,6 +73,9 @@ class TerminalRenderer extends LeafRenderObjectWidget {
   /// Visible link styling state prepared by the view layer.
   final LinkSnapshot linkSnapshot;
 
+  /// Current search hit highlights.
+  final List<SearchHit> searchHits;
+
   /// Called when the terminal grid dimensions change during layout.
   ///
   /// Fires after the terminal has been resized. Use this to notify the
@@ -93,6 +96,7 @@ class TerminalRenderer extends LeafRenderObjectWidget {
     this.blinkVisible = true,
     this.preeditText = '',
     this.linkSnapshot = .empty,
+    this.searchHits = const [],
     this.onResize,
   });
 
@@ -145,7 +149,8 @@ class TerminalRenderer extends LeafRenderObjectWidget {
       ..renderObserver = renderObserver
       ..blinkVisible = blinkVisible
       ..preeditText = preeditText
-      ..linkSnapshot = linkSnapshot;
+      ..linkSnapshot = linkSnapshot
+      ..searchHits = searchHits;
   }
 }
 
@@ -228,6 +233,11 @@ class TerminalRenderBox extends RenderBox {
   set preeditText(String value) {
     if (_preeditText == value) return;
     _preeditText = value;
+    markNeedsPaint();
+  }
+
+  set searchHits(List<SearchHit> value) {
+    _paintState.searchHits = value;
     markNeedsPaint();
   }
 
@@ -570,6 +580,7 @@ class TerminalRenderBox extends RenderBox {
       return;
     }
 
+    if (_needsFrameSync) return;
     _markFrameDirty();
   }
 

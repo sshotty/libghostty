@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:libghostty/libghostty.dart' show Cursor, TerminalColors;
 
 import '../foundation.dart' show CellMetrics, TerminalTheme;
+import '../foundation/searcher.dart' show SearchHit;
 import 'atlas/atlas.dart';
 
 /// Mutable state shared between [TerminalRenderBox] and all painters.
@@ -47,6 +48,8 @@ class TerminalPaintState {
   /// Cursor painting reads this to avoid drawing the normal terminal cursor
   /// over the active composing range.
   var preeditActive = false;
+
+  List<SearchHit> searchHits = const [];
 
   TerminalPaintState(this.theme, this.metrics)
     : faintAlpha = (theme.faintOpacity * 255).ceil() {
