@@ -477,7 +477,9 @@ class TerminalControllerImpl extends TerminalController
     if (_activeScreen == .alternate) return;
     terminal.scrollToBottom();
     final controller = _scrollController;
-    if (controller != null && controller.hasClients) {
+    if (controller != null &&
+        controller.hasClients &&
+        controller.positions.length == 1) {
       final pos = controller.position;
       if (pos.hasContentDimensions) {
         final max = pos.maxScrollExtent;
@@ -574,17 +576,16 @@ class TerminalControllerImpl extends TerminalController
   void unfocus() => _focusNode?.unfocus();
 
   @override
-  Future<bool> pasteImage({
-    required Uint8List bytes,
-    int? placementId,
-  }) async {
+  Future<bool> pasteImage({required Uint8List bytes, int? placementId}) async {
     if (bytes.isEmpty) return false;
     final limit = terminal.kittyImageStorageLimit;
     if (limit != null && bytes.length > limit) return false;
-    terminal.write(KittyGraphicsProtocol.imageEscape(
-      placementId: placementId ?? 0,
-      imageBytes: bytes,
-    ));
+    terminal.write(
+      KittyGraphicsProtocol.imageEscape(
+        placementId: placementId ?? 0,
+        imageBytes: bytes,
+      ),
+    );
     return true;
   }
 
