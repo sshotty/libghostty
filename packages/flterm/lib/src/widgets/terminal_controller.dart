@@ -53,6 +53,14 @@ abstract class TerminalController extends ChangeNotifier
   @internal
   TerminalController.base();
 
+  /// The current cell-pixel size, in physical pixels.
+  ///
+  /// Returned as `(cellWidthPx, cellHeightPx)`. Both are zero before the
+  /// first layout pass. Use this when you need pixel sizes to forward to
+  /// a backend alongside the character [cols] / [rows] — for example to
+  /// populate `pixelWidth` / `pixelHeight` on a PTY resize or SSHPtyConfig.
+  (int cellWidthPx, int cellHeightPx) get cellPixelSize;
+
   /// Active screen buffer (primary or alternate).
   ///
   /// Full-screen programs (vim, less, htop) use the alternate screen.

@@ -71,6 +71,16 @@ class TerminalView extends StatefulWidget {
   /// Controls terminal link detection, styling, and activation callbacks.
   final LinkSettings linkSettings;
 
+  /// Whether the terminal grid should fill the entire available area.
+  ///
+  /// When true, the grid rounds up to the next cell so the last column
+  /// and row cover any remaining pixels. The final render-box size is
+  /// still clamped to the parent constraints, so this does not cause
+  /// overflow. This is the recommended setting for split panes and
+  /// any layout where the terminal should "feel" like it occupies the
+  /// full pane.
+  final bool fillAvailableSpace;
+
   /// Padding around the terminal grid.
   ///
   /// Filled with the theme background color. The grid is sized from
@@ -121,6 +131,7 @@ class TerminalView extends StatefulWidget {
     this.mouseAutoHide = .onInput,
     this.linkSettings = const LinkSettings(),
     this.gestureSettings = const TerminalGestureSettings(),
+    this.fillAvailableSpace = false,
   });
 
   @override
@@ -328,6 +339,7 @@ class _TerminalViewState extends State<TerminalView> {
                         linkSnapshot: _links.snapshot(),
                         searchHits: _controller.searchHits,
                         onResize: _handleResize,
+                        fillAvailableSpace: widget.fillAvailableSpace,
                       ),
                     ),
                   ),

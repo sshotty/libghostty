@@ -97,6 +97,13 @@ class TerminalControllerImpl extends TerminalController
   TerminalScreen get activeScreen => terminal.activeScreen;
 
   @override
+  (int, int) get cellPixelSize {
+    final cw = (_lastMetrics.cellWidth * _lastDevicePixelRatio).round();
+    final ch = (_lastMetrics.cellHeight * _lastDevicePixelRatio).round();
+    return (cw, ch);
+  }
+
+  @override
   set brightness(Brightness value) {
     _textInput.keyboardAppearance = value;
     _brightness = value;
@@ -581,9 +588,9 @@ class TerminalControllerImpl extends TerminalController
     final limit = terminal.kittyImageStorageLimit;
     if (limit != null && bytes.length > limit) return false;
     terminal.write(
-      KittyGraphicsProtocol.imageEscape(
+      KittyGraphicsProtocol.transmitAndDisplay(
         placementId: placementId ?? 0,
-        imageBytes: bytes,
+        bytes: bytes,
       ),
     );
     return true;

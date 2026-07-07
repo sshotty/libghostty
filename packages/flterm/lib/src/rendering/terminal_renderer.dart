@@ -82,6 +82,15 @@ class TerminalRenderer extends LeafRenderObjectWidget {
   /// backend (PTY, SSH) of the new dimensions.
   final OnResize? onResize;
 
+  /// Whether the grid should round up to fill the available area.
+  ///
+  /// When true, the renderer uses `ceil` for grid size so the terminal
+  /// grid covers the entire pane (the last column/row may overflow by
+  /// up to one cell-pixel — the render box size is clamped to its
+  /// constraints). When false (the default), the grid uses `floor`,
+  /// leaving a thin unused strip at the right and bottom edges.
+  final bool fillAvailableSpace;
+
   /// Internal render cache used to share compatible atlas state.
   final TerminalRenderCache renderCache;
 
@@ -98,6 +107,7 @@ class TerminalRenderer extends LeafRenderObjectWidget {
     this.linkSnapshot = .empty,
     this.searchHits = const [],
     this.onResize,
+    this.fillAvailableSpace = false,
   });
 
   @override
@@ -150,7 +160,8 @@ class TerminalRenderer extends LeafRenderObjectWidget {
       ..blinkVisible = blinkVisible
       ..preeditText = preeditText
       ..linkSnapshot = linkSnapshot
-      ..searchHits = searchHits;
+      ..searchHits = searchHits
+      ..fillAvailableSpace = fillAvailableSpace;
   }
 }
 
@@ -185,6 +196,7 @@ class TerminalRenderBox extends RenderBox {
   var _lastScrollbackRows = 0;
   var _preeditText = '';
   LinkSnapshot _linkSnapshot;
+  bool _fillAvailableSpace = false;
 
   final TerminalPaintState _paintState;
   late final TerminalRenderPipeline _pipeline;
@@ -200,9 +212,11 @@ class TerminalRenderBox extends RenderBox {
     this._linkSnapshot = .empty,
     this._preeditText = '',
     this._onResize,
+    bool fillAvailableSpace = false,
   }) : _paintState = TerminalPaintState(theme, metrics)
          ..blinkVisible = blinkVisible
-         ..cursorFocused = _renderObserver.hasFocus {
+         ..cursorFocused = _renderObserver.hasFocus,
+       _fillAvailableSpace = fillAvailableSpace {
     _atlasHandle = _renderCache.acquireAtlas(
       .fromTheme(
         theme: theme,
@@ -253,6 +267,12 @@ class TerminalRenderBox extends RenderBox {
       _markLinkSnapshotRowsDirty(value);
     }
     markNeedsPaint();
+  }
+
+  set fillAvailableSpace(bool value) {
+    if (_fillAvailableSpace == value) return;
+    _fillAvailableSpace = value;
+    markNeedsLayout();
   }
 
   @override
@@ -440,7 +460,9 @@ class TerminalRenderBox extends RenderBox {
 
     final maxW = constraints.hasBoundedWidth ? constraints.maxWidth : 0.0;
     final maxH = constraints.hasBoundedHeight ? constraints.maxHeight : 0.0;
-    final (newCols, newRows) = _paintState.metrics.gridSize(maxW, maxH);
+    final (newCols, newRows) = _fillAvailableSpace
+        ? _paintState.metrics.gridSizeFill(maxW, maxH)
+        : _paintState.metrics.gridSize(maxW, maxH);
 
     size = constraints.constrain(
       Size(

@@ -140,6 +140,20 @@ final class CellMetrics {
     return (cols, rows);
   }
 
+  /// Computes a grid size that **fills** the given pixel dimensions.
+  ///
+  /// Unlike [gridSize] (which uses `floor`, leaving up to one cell of
+  /// unused space at the right and bottom edges), this method uses `ceil`
+  /// so the resulting grid covers the entire available area. The last
+  /// column/row may overflow the constraint by up to one cell-pixel; the
+  /// renderer clamps the final size to the parent constraints, which
+  /// visually appears as the terminal grid fully filling its pane.
+  (int cols, int rows) gridSizeFill(double width, double height) {
+    final cols = cellWidth > 0 ? (width / cellWidth).ceil() : 0;
+    final rows = cellHeight > 0 ? (height / cellHeight).ceil() : 0;
+    return (cols, rows);
+  }
+
   @override
   String toString() =>
       'CellMetrics(cellWidth: $cellWidth, '
