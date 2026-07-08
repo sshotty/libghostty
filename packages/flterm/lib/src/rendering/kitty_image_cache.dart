@@ -18,7 +18,7 @@ import 'package:meta/meta.dart';
 class KittyImageCache {
   final VoidCallback _onImageReady;
   final Map<int, KittyImageCacheEntry> _entries = {};
-  final Map<int, ({int width, int height})> _fingerprints = {};
+  final Map<int, ({int width, int height, int generation})> _fingerprints = {};
 
   /// [onImageReady] fires when a pending decode completes; typically
   /// wired to a render box's `markNeedsPaint`.
@@ -46,7 +46,11 @@ class KittyImageCache {
   /// Returns the entry for [image], starting a decode on first lookup
   /// or when the image's dimensions have changed. Never blocks.
   KittyImageCacheEntry lookup(KittyImage image) {
-    final fingerprint = (width: image.width, height: image.height);
+    final fingerprint = (
+      width: image.width,
+      height: image.height,
+      generation: image.generation,
+    );
     final existing = _entries[image.id];
     if (existing != null && _fingerprints[image.id] == fingerprint) {
       return existing;
@@ -68,7 +72,11 @@ class KittyImageCache {
     final existing = _entries[imageId];
     if (existing is KittyImageReady) existing.image.dispose();
     _entries[imageId] = KittyImageReady(image);
-    _fingerprints[imageId] = (width: image.width, height: image.height);
+    _fingerprints[imageId] = (
+      width: image.width,
+      height: image.height,
+      generation: 0,
+    );
   }
 
   void _beginDecode(KittyImage image) {

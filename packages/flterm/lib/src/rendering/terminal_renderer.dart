@@ -123,6 +123,7 @@ class TerminalRenderer extends LeafRenderObjectWidget {
       preeditText: preeditText,
       linkSnapshot: linkSnapshot,
       renderObserver: renderObserver,
+      fillAvailableSpace: fillAvailableSpace,
     );
   }
 
@@ -494,6 +495,18 @@ class TerminalRenderBox extends RenderBox {
       }
     } else if (_paintState.devicePixelRatio != dpr) {
       _paintState.devicePixelRatio = dpr;
+      // DPR changed without grid change — still propagate the new cell
+      // pixel sizes to libghostty and the backend (mouse encoder, SSH
+      // pixel dimensions, in-band size reports, Kitty graphics geometry).
+      if (newCols > 0 && newRows > 0) {
+        _terminal.resize(
+          cols: newCols,
+          rows: newRows,
+          cellWidthPx: (_paintState.metrics.cellWidth * dpr).round(),
+          cellHeightPx: (_paintState.metrics.cellHeight * dpr).round(),
+        );
+        _onResize?.call(newCols, newRows);
+      }
     }
 
     _syncScrollLayout();
