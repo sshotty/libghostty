@@ -253,6 +253,7 @@ class KittyGraphicsProtocol {
         // Final chunk
         result.add(utf8.encode('\x1b_G;$chunk\x1b\\'));
       }
+      offset = end;
     }
     return result.toBytes();
   }

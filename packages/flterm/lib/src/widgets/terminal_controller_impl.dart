@@ -9,7 +9,6 @@ import 'package:libghostty/libghostty.dart' hide KeyEvent;
 import 'package:meta/meta.dart';
 
 import '../foundation.dart';
-import '../foundation/kitty_graphics_protocol.dart';
 import '../rendering/kitty_png_decoder.dart';
 import 'selection_gesture_driver.dart';
 import 'terminal_controller.dart';

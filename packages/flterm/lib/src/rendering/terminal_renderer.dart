@@ -196,7 +196,7 @@ class TerminalRenderBox extends RenderBox {
   var _lastScrollbackRows = 0;
   var _preeditText = '';
   LinkSnapshot _linkSnapshot;
-  bool _fillAvailableSpace = false;
+  var _fillAvailableSpace = false;
 
   final TerminalPaintState _paintState;
   late final TerminalRenderPipeline _pipeline;
@@ -212,11 +212,10 @@ class TerminalRenderBox extends RenderBox {
     this._linkSnapshot = .empty,
     this._preeditText = '',
     this._onResize,
-    bool fillAvailableSpace = false,
+    this._fillAvailableSpace = false,
   }) : _paintState = TerminalPaintState(theme, metrics)
          ..blinkVisible = blinkVisible
-         ..cursorFocused = _renderObserver.hasFocus,
-       _fillAvailableSpace = fillAvailableSpace {
+         ..cursorFocused = _renderObserver.hasFocus {
     _atlasHandle = _renderCache.acquireAtlas(
       .fromTheme(
         theme: theme,
