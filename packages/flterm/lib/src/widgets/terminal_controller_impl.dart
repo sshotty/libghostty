@@ -118,7 +118,9 @@ class TerminalControllerImpl extends TerminalController
     if (!_cursorBlinking || !hasFocus) return false;
     if (_activeScreen == .alternate) return true;
     final scrollController = _scrollController;
-    if (scrollController == null || !scrollController.hasClients) {
+    if (scrollController == null ||
+        !scrollController.hasClients ||
+        scrollController.positions.length != 1) {
       return terminal.isViewportActive;
     }
     final position = scrollController.position;
@@ -475,7 +477,10 @@ class TerminalControllerImpl extends TerminalController
     if (_activeScreen == .alternate) return;
     terminal.scrollToBottom();
     final controller = _scrollController;
-    if (controller != null && controller.hasClients) {
+    if (controller != null &&
+        controller.hasClients &&
+        controller.positions.length == 1 &&
+        controller.position.hasContentDimensions) {
       final max = controller.position.maxScrollExtent;
       if (max.isFinite) controller.jumpTo(max);
     }
@@ -952,7 +957,11 @@ class TerminalControllerImpl extends TerminalController
 
   void _syncScrollControllerToTerminal() {
     final scrollController = _scrollController;
-    if (scrollController == null || !scrollController.hasClients) return;
+    if (scrollController == null ||
+        !scrollController.hasClients ||
+        scrollController.positions.length != 1) {
+      return;
+    }
     final target = terminal.scrollbar.offset * _lastMetrics.cellHeight;
     final position = scrollController.position;
     final clamped = target.clamp(
