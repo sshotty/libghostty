@@ -24,6 +24,17 @@ void main() {
         );
       });
 
+      test('reads legacy package-scoped user-defines', () {
+        final input = createTestBuildInput(
+          packageName: 'libghostty',
+          userDefines: {
+            'libghostty': {'source': 'compile'},
+          },
+        );
+
+        expect(_describeProvider(LibraryProvider.resolve(input)), 'compile');
+      });
+
       test('implement LibraryProvider', () {
         expect(
           DownloadPrebuilt(createTestBuildInput()),
@@ -45,18 +56,20 @@ void main() {
 }
 
 BuildInput createTestBuildInput({
+  String packageName = 'test_package',
   OS os = OS.macOS,
   Architecture arch = Architecture.arm64,
+  Map<String, Object?> userDefines = const {},
 }) {
   final tmp = Directory.systemTemp.createTempSync('build_input_test_');
   addTearDown(() => tmp.deleteSync(recursive: true));
 
   return BuildInput(<String, dynamic>{
-    'package_name': 'test_package',
+    'package_name': packageName,
     'package_root': tmp.path,
     'out_dir': '${tmp.path}/out',
     'out_dir_shared': '${tmp.path}/shared',
-    'user_defines': <String, String>{},
+    'user_defines': userDefines,
     'config': <String, dynamic>{
       'build_code_assets': true,
       'build_asset_types': <String>['code_assets/code'],
