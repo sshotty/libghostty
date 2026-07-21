@@ -160,28 +160,6 @@ class KittyGraphicsProtocol {
     );
   }
 
-  /// Encodes the old-style combined transmit+display escape (legacy API).
-  @Deprecated('Use transmitAndDisplay() instead')
-  static Uint8List imageEscape({
-    required int placementId,
-    required Uint8List imageBytes,
-    String format = 'png',
-    int? width,
-    int? height,
-  }) {
-    final fmt = switch (format.toLowerCase()) {
-      'png' => KittyGraphicsFormat.png,
-      _ => KittyGraphicsFormat.png,
-    };
-    return transmitAndDisplay(
-      placementId: placementId,
-      bytes: imageBytes,
-      format: fmt,
-      width: width,
-      height: height,
-    );
-  }
-
   // ---------------------------------------------------------------------------
   // Internal helpers
   // ---------------------------------------------------------------------------
