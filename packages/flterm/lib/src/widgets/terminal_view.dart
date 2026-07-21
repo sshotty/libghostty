@@ -349,6 +349,7 @@ class _TerminalViewState extends State<TerminalView> {
                         linkSnapshot: _links.snapshot(),
                         searchHits: _controller.searchHits,
                         onResize: _handleResize,
+                        onViewportChanged: _binding.handleViewportChanged,
                         fillAvailableSpace: widget.fillAvailableSpace,
                       ),
                     ),
