@@ -591,12 +591,10 @@ class TerminalRenderBox extends RenderBox {
 
     _stickToBottom = maxExtent <= 0 || pixels >= maxExtent - cellHeight;
 
-    final targetOffset = (pixels / cellHeight).floor();
-    final delta = targetOffset - scrollbar.offset;
+    final targetRow = (pixels / cellHeight).floor();
+    if (targetRow == scrollbar.offset) return;
 
-    if (delta == 0) return;
-
-    _terminal.scrollViewport(delta);
+    _terminal.scrollToRow(targetRow);
     _markFrameDirty();
   }
 

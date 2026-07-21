@@ -13,7 +13,10 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:libghostty/libghostty.dart' hide KeyEvent;
+import 'package:libghostty/libghostty.dart' hide ColorScheme, KeyEvent;
+import 'package:libghostty/libghostty.dart'
+    as vt
+    show ColorScheme, ColorSchemeReportEncode;
 
 extension _SelectionEdges on Selection {
   Position get _startPoint => start.positionIn(.viewport)!;
@@ -65,6 +68,10 @@ void main() {
 
     Selection? activeSelection(TerminalController controller) {
       return (controller as TerminalViewBinding).terminal.selection;
+    }
+
+    Terminal terminal(TerminalController controller) {
+      return (controller as TerminalViewBinding).terminal;
     }
 
     String decodeOutput(List<Uint8List> output) {
@@ -934,6 +941,25 @@ void main() {
       expect(find.byType(TerminalView), findsOneWidget);
     });
 
+    testWidgets('reports light color scheme for perceived-light backgrounds', (
+      tester,
+    ) async {
+      final output = <Uint8List>[];
+      controller.onOutput = output.add;
+      final theme = TerminalTheme(
+        palette: ColorPalette(
+          ansiColors: List.filled(16, const Color(0xFF888888)),
+          background: const Color(0xFFFF8000),
+          foreground: const Color(0xFF000000),
+        ),
+      );
+
+      await tester.pumpWidget(wrapInApp(controller: controller, theme: theme));
+      writeUtf8(controller, '\x1b[?996n');
+
+      expect(decodeOutput(output), vt.ColorScheme.light.encode());
+    });
+
     testWidgets('sendText via controller produces onOutput', (tester) async {
       final output = <Uint8List>[];
       controller.onOutput = output.add;
@@ -1218,24 +1244,89 @@ void main() {
       expect(sel!.mode, TerminalSelectionShape.normal);
     });
 
-    testWidgets('scroll event changes scroll offset', (tester) async {
-      writeNumberedLines(50);
+    group('scrolling', () {
+      Future<
+        ({
+          TerminalScrollController scrollController,
+          Terminal terminal,
+          double cellHeight,
+        })
+      >
+      pumpScrollableTerminal(WidgetTester tester) async {
+        final scrollController = TerminalScrollController();
+        addTearDown(scrollController.dispose);
 
-      await tester.pumpWidget(
-        wrapInApp(controller: controller, autofocus: true),
-      );
-      await tester.pumpAndSettle();
+        await tester.pumpWidget(
+          wrapInApp(
+            controller: controller,
+            scrollController: scrollController,
+            showKeyboard: false,
+            width: 400,
+            height: 80,
+          ),
+        );
+        await tester.pump();
+        writeNumberedLines(80);
+        await tester.pump();
+        await tester.pump();
 
-      final center = tester.getCenter(find.byType(TerminalView));
-      await tester.sendEventToBinding(
-        PointerScrollEvent(
-          position: center,
-          scrollDelta: const Offset(0, -100),
-        ),
-      );
-      await tester.pumpAndSettle();
+        return (
+          scrollController: scrollController,
+          terminal: terminal(controller),
+          cellHeight: renderer(tester).metrics.cellHeight,
+        );
+      }
 
-      expect(find.byType(TerminalView), findsOneWidget);
+      testWidgets('scroll event changes scroll offset', (tester) async {
+        final fixture = await pumpScrollableTerminal(tester);
+        final initialPixels = fixture.scrollController.position.pixels;
+        final center = tester.getCenter(find.byType(TerminalView));
+
+        await tester.sendEventToBinding(
+          PointerScrollEvent(
+            position: center,
+            scrollDelta: const Offset(0, -100),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(fixture.scrollController.position.pixels, isNot(initialPixels));
+      });
+
+      testWidgets('pixel offset maps to terminal row after existing scroll', (
+        tester,
+      ) async {
+        final fixture = await pumpScrollableTerminal(tester);
+        final targetRow = fixture.terminal.scrollbackRows ~/ 2;
+        fixture.terminal.scrollToBottom();
+
+        fixture.scrollController.jumpTo(targetRow * fixture.cellHeight);
+        await tester.pump();
+
+        expect(fixture.terminal.scrollbar.offset, targetRow);
+      });
+
+      testWidgets('negative pixel offset clamps to top row', (tester) async {
+        final fixture = await pumpScrollableTerminal(tester);
+
+        fixture.scrollController.jumpTo(-100);
+        await tester.pump();
+
+        expect(fixture.terminal.scrollbar.offset, 0);
+      });
+
+      testWidgets('overscroll pixel offset clamps to live row', (tester) async {
+        final fixture = await pumpScrollableTerminal(tester);
+        final position = fixture.scrollController.position;
+
+        fixture.scrollController.jumpTo(position.maxScrollExtent + 100);
+        await tester.pump();
+
+        expect(
+          fixture.terminal.scrollbar.offset,
+          fixture.terminal.scrollbackRows,
+        );
+      });
     });
 
     testWidgets('selectAll via controller updates view', (tester) async {
