@@ -42,7 +42,7 @@ sealed class LibraryProvider {
   ///     can be specified via the `GHOSTTY_SRC` environment variable, or it
   ///     will be downloaded based on `downloadMethod`.
   static LibraryProvider resolve(BuildInput input) {
-    final source = input.userDefines['source'];
+    final source = _userDefine(input, 'source');
 
     if (source == 'compile') {
       final sourcePath = Platform.environment[ghosttySrcEnvKey];
@@ -50,11 +50,11 @@ sealed class LibraryProvider {
       return CompileFromSource(
         input,
         sourcePath: sourcePath,
-        downloadMethod: switch (input.userDefines['download']) {
+        downloadMethod: switch (_userDefine(input, 'download')) {
           'git' => SourceLocation.git,
           'tarball' || null => SourceLocation.tarball,
           _ => throw ArgumentError(
-            'Invalid download method: ${input.userDefines['download']}. '
+            'Invalid download method: ${_userDefine(input, 'download')}. '
             'Valid options are "git" or "tarball".',
           ),
         },
@@ -62,6 +62,27 @@ sealed class LibraryProvider {
     }
 
     return DownloadPrebuilt(input);
+  }
+
+  /// Reads a hook setting from both native-assets user-defines protocols.
+  ///
+  /// Recent hooks expose only this package's values through [userDefines].
+  /// Older Flutter toolchains pass the package-scoped map through the raw
+  /// input instead, so retain that fallback for Flutter applications using
+  /// the current package with an older SDK.
+  static Object? _userDefine(BuildInput input, String key) {
+    final value = input.userDefines[key];
+    if (value != null) return value;
+
+    final raw = input.json['user_defines'];
+    if (raw is! Map) return null;
+
+    final packageDefines = raw[input.packageName];
+    if (packageDefines is Map && packageDefines[key] != null) {
+      return packageDefines[key];
+    }
+
+    return raw[key];
   }
 
   /// Checks if Zig is installed and available on PATH.
