@@ -159,6 +159,15 @@ sealed class TerminalController implements Listenable {
   /// independent of whether the selection is currently visible in a view.
   bool get hasSelection;
 
+  /// The measured cell size in physical pixels.
+  ///
+  /// Both values are zero before the attached [TerminalView] has committed its
+  /// first measured geometry. Use this inside [onResize] to forward pixel
+  /// dimensions to a backend (PTY or SSH) alongside the character [cols] and
+  /// [rows]; the values follow the view's device pixel ratio and are not
+  /// reported by [onResize], which only fires for grid changes.
+  (int cellWidthPx, int cellHeightPx) get cellPixelSize;
+
   /// The current mouse tracking mode requested by the terminal program.
   ///
   /// Programs enable DEC private modes 9, 1000, 1002, or 1003 to receive

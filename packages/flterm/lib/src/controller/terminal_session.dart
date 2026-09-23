@@ -138,6 +138,13 @@ final class TerminalSession extends TerminalController with ChangeNotifier {
     return _state.activeScreen;
   }
 
+  @override
+  (int, int) get cellPixelSize {
+    _checkNotDisposed();
+    final geometry = _committedGeometry;
+    return (geometry?.cellWidthPx ?? 0, geometry?.cellHeightPx ?? 0);
+  }
+
   SurfaceGeometry? get committedGeometry {
     _checkNotDisposed();
     return _committedGeometry;
