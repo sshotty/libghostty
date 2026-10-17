@@ -96,7 +96,10 @@ sealed class TerminalController implements Listenable {
   /// restoration finishes. When false, a view-driven resize may cause
   /// incompatible scrollback pages to be skipped. [preserveSnapshotColors]
   /// defaults to true and preserves terminal colors on initial view attachment;
-  /// later theme changes apply normally.
+  /// later theme changes apply normally. [compressHistory] defaults to false.
+  /// When true, libghostty requests compression of off-screen history pages as
+  /// it restores them in either mode. Builds without compression support and
+  /// pages libghostty cannot reclaim remain uncompressed.
   ///
   /// Dimensions, modes, cursor state, and scrollback limits come from the
   /// snapshot. Replacing [config] afterward applies the new configuration
@@ -117,6 +120,7 @@ sealed class TerminalController implements Listenable {
     bool retainContinuation,
     bool deferResize,
     bool preserveSnapshotColors,
+    bool compressHistory,
   }) = TerminalSession.fromSnapshot;
 
   TerminalController._();
@@ -143,9 +147,9 @@ sealed class TerminalController implements Listenable {
   /// Replaces the configuration.
   ///
   /// Applies every entry in [TerminalConfig.modes] and updates the terminal's
-  /// resource limits, cursor defaults, query responses, and input policies
-  /// without recreating the terminal. Modes omitted from the new map retain
-  /// their live values.
+  /// resource limits, resize policy, cursor defaults, query responses, and
+  /// input policies without recreating the terminal. Modes omitted from the
+  /// new map retain their live values.
   ///
   /// [TerminalConfig.cols] and [TerminalConfig.rows] are creation-only; a
   /// connected [TerminalView] controls the live grid size. Lowering scrollback
@@ -174,6 +178,14 @@ sealed class TerminalController implements Listenable {
   /// mouse reports. When active, pointer events are encoded and sent to the
   /// program instead of performing selection. Hold Shift to bypass tracking.
   MouseTracking get mouseTracking;
+
+  /// The mouse pointer shape most recently requested by the terminal program.
+  ///
+  /// Programs set this value with OSC 22. It is the terminal's requested
+  /// shape; [TerminalView] maps it to the closest cursor supported by Flutter.
+  /// The initial and explicit text shape share the same value, so the view
+  /// keeps its existing text or basic cursor choice based on mouse tracking.
+  MouseShape get mouseShape;
 
   /// Sets the callback invoked when the terminal receives BEL (0x07).
   ///
@@ -233,6 +245,12 @@ sealed class TerminalController implements Listenable {
   /// during [write].
   set onProgressReport(ValueChanged<TerminalProgress>? callback);
 
+  /// Sets the callback for validated OSC 7501 program status reports.
+  ///
+  /// The report contains copied strings and can be retained after the
+  /// callback returns. Fires synchronously during [write].
+  set onProgramStatus(TerminalProgramStatusCallback? callback);
+
   /// Sets the callback invoked when the working directory changes.
   ///
   /// Programs commonly report the directory with OSC 7, OSC 9, or OSC 1337.
@@ -241,6 +259,18 @@ sealed class TerminalController implements Listenable {
   /// exactly as reported: OSC 7 commonly supplies a `file://` URI, whereas OSC
   /// 9 and OSC 1337 commonly supply a path.
   set onPwdChanged(VoidCallback? value);
+
+  /// Sets the callback for shell integration events reported through OSC 133.
+  ///
+  /// The event contains copied command and error strings. It fires
+  /// synchronously during [write].
+  set onSemanticPrompt(TerminalSemanticPromptCallback? callback);
+
+  /// Sets the callback for full terminal resets received through RIS (`ESC c`).
+  ///
+  /// Fires synchronously during [write]. Programmatic terminal resets do not
+  /// invoke this callback.
+  set onReset(VoidCallback? callback);
 
   /// Sets the callback that reports measured terminal grid changes.
   ///
@@ -270,6 +300,14 @@ sealed class TerminalController implements Listenable {
   /// while [write] processes the sequence.
   set onTitleChanged(VoidCallback? value);
 
+  /// Sets the callback for unsupported terminal string sequences.
+  ///
+  /// Capture requires a positive [TerminalConfig.unknownSequenceMaxBytes].
+  /// The callback receives copied binary-safe content and fires synchronously
+  /// during [write]. Only normally terminated sequences with unsupported
+  /// identifiers are reported. The callback must not call [write] reentrantly.
+  set onUnknownSequence(TerminalUnknownSequenceCallback? callback);
+
   /// The working directory reported by the shell through OSC 7, OSC 9, or
   /// OSC 1337.
   ///
@@ -292,6 +330,14 @@ sealed class TerminalController implements Listenable {
   /// error. Disposing the controller during restoration completes it with a
   /// [StateError]. Read [restoration] for the current lifecycle state.
   Future<void> get restored;
+
+  /// Memory held by this terminal's screens and Kitty graphics storage.
+  ///
+  /// Resident bytes include compressed page storage but exclude Kitty image
+  /// bytes. Reading this value visits every screen page, so query it when
+  /// checking memory budgets instead of after every terminal write. This does
+  /// not include the Flutter process's other memory.
+  TerminalMemoryUsage get memoryUsage;
 
   /// The number of scrollback rows in the active screen.
   int get scrollbackRows;
@@ -398,6 +444,9 @@ sealed class TerminalController implements Listenable {
   /// a VT mode sequence. When the alternate screen returns to the primary
   /// screen, every mode present in [TerminalConfig.modes] is reapplied and can
   /// overwrite this value.
+  ///
+  /// Setting synchronized output directly does not start a render hold.
+  /// Disabling it releases any hold started by terminal output.
   void modeSet(TerminalMode mode, {required bool value});
 
   /// Sends paste data to the terminal via [onOutput].
@@ -418,6 +467,26 @@ sealed class TerminalController implements Listenable {
 
   /// Scrolls the viewport to the top of the scrollback history.
   void scrollToTop();
+
+  /// Scrolls between retained shell prompts relative to the viewport top.
+  ///
+  /// Negative [delta] values move toward older prompts and positive values move
+  /// toward newer prompts. Zero leaves the viewport unchanged. Counts outside
+  /// the target's signed integer range are clamped without changing direction.
+  ///
+  /// Requires OSC 133 semantic prompt markers from the shell. If fewer prompts
+  /// remain than requested, this moves to the last matching prompt, clamped to
+  /// the active area. Moving forward through a final prompt continuation can
+  /// scroll to the active area even when there is no newer prompt.
+  ///
+  /// Returns true and notifies viewport listeners only when the viewport offset
+  /// changes.
+  ///
+  /// ```dart
+  /// controller.scrollToPrompt(-1); // Previous, older prompt.
+  /// controller.scrollToPrompt(1); // Next, newer prompt.
+  /// ```
+  bool scrollToPrompt(int delta);
 
   /// Selects all selectable content in the active screen.
   ///

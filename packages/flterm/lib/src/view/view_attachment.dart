@@ -80,9 +80,44 @@ final class ViewAttachment extends ChangeNotifier {
 
   MouseCursor get mouseCursor {
     if (_mouseCursorHidden) return SystemMouseCursors.none;
-    return _controller.mouseTracking == .none
-        ? SystemMouseCursors.text
-        : SystemMouseCursors.basic;
+    final tracking = _controller._state.mouseTracking;
+    return switch (_controller._state.mouseShape) {
+      .default$ => SystemMouseCursors.basic,
+      .contextMenu => SystemMouseCursors.contextMenu,
+      .help => SystemMouseCursors.help,
+      .pointer => SystemMouseCursors.click,
+      .progress => SystemMouseCursors.progress,
+      .wait => SystemMouseCursors.wait,
+      .cell => SystemMouseCursors.cell,
+      .crosshair => SystemMouseCursors.precise,
+      .text =>
+        tracking == .none ? SystemMouseCursors.text : SystemMouseCursors.basic,
+      .verticalText => SystemMouseCursors.verticalText,
+      .alias => SystemMouseCursors.alias,
+      .copy => SystemMouseCursors.copy,
+      .move => SystemMouseCursors.move,
+      .noDrop => SystemMouseCursors.noDrop,
+      .notAllowed => SystemMouseCursors.forbidden,
+      .grab => SystemMouseCursors.grab,
+      .grabbing => SystemMouseCursors.grabbing,
+      .allScroll => SystemMouseCursors.allScroll,
+      .colResize => SystemMouseCursors.resizeColumn,
+      .rowResize => SystemMouseCursors.resizeRow,
+      .nResize => SystemMouseCursors.resizeUp,
+      .eResize => SystemMouseCursors.resizeRight,
+      .sResize => SystemMouseCursors.resizeDown,
+      .wResize => SystemMouseCursors.resizeLeft,
+      .neResize => SystemMouseCursors.resizeUpRight,
+      .nwResize => SystemMouseCursors.resizeUpLeft,
+      .seResize => SystemMouseCursors.resizeDownRight,
+      .swResize => SystemMouseCursors.resizeDownLeft,
+      .ewResize => SystemMouseCursors.resizeLeftRight,
+      .nsResize => SystemMouseCursors.resizeUpDown,
+      .neswResize => SystemMouseCursors.resizeUpRightDownLeft,
+      .nwseResize => SystemMouseCursors.resizeUpLeftDownRight,
+      .zoomIn => SystemMouseCursors.zoomIn,
+      .zoomOut => SystemMouseCursors.zoomOut,
+    };
   }
 
   bool get mouseCursorHidden => _mouseCursorHidden;
@@ -173,6 +208,16 @@ final class ViewAttachment extends ChangeNotifier {
     _syncBlink();
   }
 
+  void setRenderSurfaceCallbacks(RenderSurfaceCallbacks? callbacks) {
+    if (_controller.isDisposed) return;
+    _controller._setRenderSurfaceCallbacks(callbacks);
+  }
+
+  bool get renderHoldActive => _controller._renderHoldActive;
+
+  bool interruptRenderHoldForInteraction() =>
+      _controller._interruptRenderHoldForInteraction();
+
   @override
   void dispose() {
     if (_disposed) return;
@@ -181,6 +226,7 @@ final class ViewAttachment extends ChangeNotifier {
     if (!_controller.isDisposed) {
       _controller.removeListener(_handleControllerChanged);
       _controller._frameChanges.removeListener(_handleTerminalChanged);
+      _controller._setRenderSurfaceCallbacks(null);
     }
     _scrollController?.removeListener(_handleScrollChanged);
     links.dispose();

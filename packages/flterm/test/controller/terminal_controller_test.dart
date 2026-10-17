@@ -4,6 +4,7 @@ library;
 import 'dart:convert';
 
 import 'package:fake_async/fake_async.dart';
+import 'package:flterm/flterm.dart' as flterm;
 import 'package:flterm/src/controller/terminal_controller.dart';
 import 'package:flterm/src/foundation.dart';
 import 'package:flterm/src/input/input_message.dart';
@@ -94,11 +95,13 @@ void main() {
         Terminal source, {
         bool progressive = true,
         bool deferResize = true,
+        bool compressHistory = false,
       }) {
-        final restored = TerminalController.fromSnapshot(
+        final restored = flterm.TerminalController.fromSnapshot(
           source.encodeSnapshot(),
           progressive: progressive,
           deferResize: deferResize,
+          compressHistory: compressHistory,
         );
         addTearDown(restored.dispose);
         return restored;
@@ -179,6 +182,33 @@ void main() {
 
           await expectLater(restored.restored, completes);
         });
+
+        test('compresses history only when requested', () {
+          final source = terminalWithHistory();
+          final uncompressed = restore(source, progressive: false);
+          final compressed = restore(
+            source,
+            progressive: false,
+            compressHistory: true,
+          );
+
+          final uncompressedUsage = uncompressed.memoryUsage;
+          final compressedUsage = compressed.memoryUsage;
+          expect(uncompressedUsage, isA<flterm.TerminalMemoryUsage>());
+          if (compressedUsage.compressionSupported) {
+            expect(uncompressedUsage.primaryCompressedPages, 0);
+            expect(compressedUsage.primaryCompressedPages, greaterThan(0));
+          }
+
+          for (final restored in [uncompressed, compressed]) {
+            expect(restored.scrollbackRows, source.scrollbackRows);
+            final actual = restored.createFormatter(format: .plain);
+            addTearDown(actual.dispose);
+            final expected = Formatter(terminal: source, format: .plain);
+            addTearDown(expected.dispose);
+            expect(actual.format(), expected.format());
+          }
+        });
       });
 
       group('progressive restoration', () {
@@ -244,6 +274,34 @@ void main() {
             async.flushMicrotasks();
 
             expect(completed, isTrue);
+          });
+        });
+
+        test('compresses history only when requested', () {
+          fakeAsync((async) {
+            final source = terminalWithHistory();
+            final uncompressed = restore(source);
+            final compressed = restore(source, compressHistory: true);
+
+            async.elapse(const Duration(seconds: 1));
+
+            final uncompressedUsage = uncompressed.memoryUsage;
+            final compressedUsage = compressed.memoryUsage;
+            expect(uncompressedUsage, isA<flterm.TerminalMemoryUsage>());
+            if (compressedUsage.compressionSupported) {
+              expect(uncompressedUsage.primaryCompressedPages, 0);
+              expect(compressedUsage.primaryCompressedPages, greaterThan(0));
+            }
+
+            for (final restored in [uncompressed, compressed]) {
+              expect(restored.restoration, RestorationState.complete);
+              expect(restored.scrollbackRows, source.scrollbackRows);
+              final actual = restored.createFormatter(format: .plain);
+              addTearDown(actual.dispose);
+              final expected = Formatter(terminal: source, format: .plain);
+              addTearDown(expected.dispose);
+              expect(actual.format(), expected.format());
+            }
           });
         });
 
@@ -592,6 +650,24 @@ void main() {
         addTearDown(formatter.dispose);
 
         expect(formatter.format(), startsWith('saved terminal'));
+      });
+    });
+
+    group('memory usage', () {
+      test('reports terminal screen memory', () {
+        controller.write(utf8.encode('memory usage'));
+
+        final usage = controller.memoryUsage;
+
+        expect(usage, isA<flterm.TerminalMemoryUsage>());
+        expect(usage.primaryPages, greaterThan(0));
+        expect(usage.primaryResidentBytes, greaterThan(0));
+      });
+
+      test('rejects access after disposal', () {
+        controller.dispose();
+
+        expect(() => controller.memoryUsage, throwsStateError);
       });
     });
 
@@ -1198,6 +1274,22 @@ void main() {
       );
     });
 
+    group('mouseShape', () {
+      test('exposes OSC 22 state through the public controller API', () {
+        expect(controller.mouseShape, flterm.MouseShape.text);
+
+        writeControllerUtf8(controller, '\x1b]22;pointer\x07');
+
+        expect(controller.mouseShape, flterm.MouseShape.pointer);
+      });
+
+      test('throws after the controller is disposed', () {
+        controller.dispose();
+
+        expect(() => controller.mouseShape, throwsStateError);
+      });
+    });
+
     group('handleTerminalScroll', () {
       test('uses the last pointer position for tracked scroll', () {
         enableMouseTracking(controller);
@@ -1468,6 +1560,127 @@ void main() {
       });
     });
 
+    group('session events', () {
+      test(
+        'forwards OSC 7501 program status through the public package API',
+        () {
+          final reports = <flterm.TerminalProgramStatus>[];
+          controller.onProgramStatus = reports.add;
+
+          writeControllerUtf8(
+            controller,
+            '\x1b]7501;state=blocked:kind=permission:progress=40:id=a/b'
+            ':app=terraform:title=UGxhbg==:msg=QXBwbHk/\x07',
+          );
+
+          expect(reports, hasLength(1));
+          expect(reports.single.state, flterm.ProgramStatusState.blocked);
+          expect(reports.single.kind, flterm.ProgramStatusKind.permission);
+          expect(reports.single.progress, 40);
+          expect(reports.single.message, 'Apply?');
+
+          final retained = reports.single;
+          writeControllerUtf8(controller, '\x1b]7501;state=done\x07');
+          controller.dispose();
+          expect(retained.message, 'Apply?');
+        },
+      );
+
+      test('forwards OSC 133 semantic prompt fields', () {
+        final events = <flterm.TerminalSemanticPrompt>[];
+        controller.onSemanticPrompt = events.add;
+
+        writeControllerUtf8(controller, '\x1b]133;D;-1;err=boom\x07');
+
+        expect(events, hasLength(1));
+        expect(events.single.kind, flterm.SemanticPromptKind.commandEnd);
+        expect(
+          events.single.promptKind,
+          flterm.SemanticPromptPromptKind.primary,
+        );
+        expect(events.single.exitCode, -1);
+        expect(events.single.error, 'boom');
+      });
+
+      test(
+        'reports RIS input and clears the callback when replaced with null',
+        () {
+          var resets = 0;
+          controller.onReset = () => resets++;
+
+          writeControllerUtf8(controller, '\x1bc');
+          controller.onReset = null;
+          writeControllerUtf8(controller, '\x1bc');
+
+          expect(resets, 1);
+        },
+      );
+
+      test('captures unknown sequences only when configured', () {
+        final sequences = <flterm.TerminalUnknownSequence>[];
+        controller.onUnknownSequence = sequences.add;
+
+        writeControllerUtf8(controller, '\x1b_abc\x1b\\');
+        expect(sequences, isEmpty);
+
+        controller.config = controller.config.copyWith(
+          unknownSequenceMaxBytes: 2,
+        );
+        writeControllerUtf8(controller, '\x1b_abc\x1b\\');
+
+        expect(sequences, hasLength(1));
+        expect(sequences.single.tag, flterm.TerminalUnknownSequenceTag.apc);
+        expect(sequences.single.content, [0x61, 0x62]);
+        expect(sequences.single.truncated, isTrue);
+        expect(sequences.single.terminator, isNull);
+
+        controller.config = controller.config.copyWith(
+          unknownSequenceMaxBytes: 0,
+        );
+        writeControllerUtf8(controller, '\x1b_abc\x1b\\');
+        expect(sequences, hasLength(1));
+
+        controller.config = controller.config.copyWith(
+          unknownSequenceMaxBytes: 32,
+        );
+        writeControllerUtf8(controller, '\x1b]7400;x\x1b\\');
+
+        expect(sequences, hasLength(2));
+        expect(sequences.last.tag, flterm.TerminalUnknownSequenceTag.osc);
+        expect(sequences.last.content, '7400;x'.codeUnits);
+        expect(sequences.last.truncated, isFalse);
+        expect(sequences.last.terminator, flterm.OscTerminator.st);
+
+        var replacements = 0;
+        controller.onUnknownSequence = (_) => replacements++;
+        writeControllerUtf8(controller, '\x1b]7400;y\x1b\\');
+        expect(replacements, 1);
+
+        controller.onUnknownSequence = null;
+        writeControllerUtf8(controller, '\x1b]7400;z\x1b\\');
+        expect(replacements, 1);
+      });
+
+      test('forwards callback errors from controller.write', () {
+        final error = StateError('status callback failed');
+        controller.onProgramStatus = (_) => throw error;
+
+        expect(
+          () => writeControllerUtf8(controller, '\x1b]7501;state=done\x07'),
+          throwsA(same(error)),
+        );
+      });
+
+      test('new callback setters reject use after disposal', () {
+        controller.dispose();
+
+        expect(() => controller.onProgramStatus = null, throwsStateError);
+        expect(() => controller.onSemanticPrompt = null, throwsStateError);
+        expect(() => controller.onReset = null, throwsStateError);
+        expect(() => controller.onUnknownSequence = null, throwsStateError);
+      });
+    });
+
     group('selection', () {
       test('selectRange notifies listeners and installs selection', () {
         var notified = false;
@@ -1581,6 +1794,46 @@ void main() {
         );
 
         expect(controller.hasSelection, isFalse);
+      });
+    });
+
+    group('scrollToPrompt', () {
+      test('notifies on movement and rejects calls after disposal', () {
+        final custom = TerminalController(
+          config: const TerminalConfig(rows: 2),
+        );
+        addTearDown(custom.dispose);
+        writeControllerUtf8(
+          custom,
+          '\x1b]133;P;k=i\x07p1\r\n'
+          '\x1b]133;B\x07cmd1\r\n'
+          '\x1b]133;C\x07out1\r\n'
+          '\x1b]133;P;k=i\x07p2\r\n'
+          '\x1b]133;B\x07cmd2\r\n'
+          '\x1b]133;C\x07out2\r\n'
+          '\x1b]133;P;k=i\x07p3\r\n'
+          '\x1b]133;B\x07cmd3\r\n'
+          '\x1b]133;C\x07out3\r\n'
+          '\x1b]133;P;k=i\x07p4',
+        );
+
+        var notifications = 0;
+        access(custom).viewportChanges.addListener(() => notifications++);
+
+        expect(custom.scrollToPrompt(-1), isTrue);
+        expect(custom.scrollbar.offset, 6);
+        expect(notifications, 1);
+        expect(custom.scrollToPrompt(0), isFalse);
+        expect(custom.scrollbar.offset, 6);
+        expect(notifications, 1);
+        expect(custom.scrollToPrompt(100), isTrue);
+        expect(custom.scrollbar.offset, 8);
+        expect(notifications, 2);
+        expect(custom.scrollToPrompt(1), isFalse);
+        expect(notifications, 2);
+
+        custom.dispose();
+        expect(() => custom.scrollToPrompt(1), throwsStateError);
       });
     });
 
@@ -1966,6 +2219,18 @@ void main() {
     });
 
     group('config', () {
+      SurfaceMeasurement measurement(int cols, int rows) => SurfaceMeasurement(
+        cols: cols,
+        rows: rows,
+        cellWidth: 8,
+        cellHeight: 16,
+        paddingLeft: 0,
+        paddingRight: 0,
+        paddingTop: 0,
+        paddingBottom: 0,
+        devicePixelRatio: 1,
+      );
+
       Uint8List transmitRedPixel({int id = 42}) {
         return .fromList('\x1b_Gf=24,s=1,v=1,a=t,i=$id;/wAA\x1b\\'.codeUnits);
       }
@@ -2014,6 +2279,43 @@ void main() {
 
         expect(renderState.cursor.visualStyle, CursorShape.underline);
         expect(renderState.cursor.blinking, isTrue);
+      });
+
+      test('initial config keeps backend scrollback out of a grown grid', () {
+        final custom = TerminalController(
+          config: const TerminalConfig(
+            cols: 5,
+            rows: 3,
+            resizePullScrollback: false,
+          ),
+        );
+        addTearDown(custom.dispose);
+
+        custom.write(Uint8List.fromList(utf8.encode('1\r\n2\r\n3\r\n4\r\n5')));
+        expect(custom.scrollbackRows, 2);
+
+        access(custom).handleResize(measurement(5, 5));
+
+        expect(custom.scrollbackRows, 2);
+      });
+
+      test('live config enables pulling scrollback into a grown grid', () {
+        final custom = TerminalController(
+          config: const TerminalConfig(
+            cols: 5,
+            rows: 3,
+            resizePullScrollback: false,
+          ),
+        );
+        addTearDown(custom.dispose);
+
+        custom.write(Uint8List.fromList(utf8.encode('1\r\n2\r\n3\r\n4\r\n5')));
+        expect(custom.scrollbackRows, 2);
+
+        custom.config = custom.config.copyWith(resizePullScrollback: true);
+        access(custom).handleResize(measurement(5, 5));
+
+        expect(custom.scrollbackRows, 0);
       });
 
       test('setter applies scrollback limits', () {

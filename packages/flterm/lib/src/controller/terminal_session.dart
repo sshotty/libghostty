@@ -1,7 +1,10 @@
 part of 'terminal_controller.dart';
 
+enum _RenderHoldPhase { released, captured, releaseAfterWrite }
+
 typedef _TerminalSessionState = ({
   TerminalScreen activeScreen,
+  MouseShape mouseShape,
   MouseTracking mouseTracking,
   bool alternateScroll,
   bool cursorKeyApplication,
@@ -42,6 +45,9 @@ final class TerminalSession extends TerminalController with ChangeNotifier {
   TerminalConfig _config;
   var _disposed = false;
   var _selectionChangeDepth = 0;
+  var _renderHoldPhase = _RenderHoldPhase.released;
+  Timer? _renderHoldTimeout;
+  RenderSurfaceCallbacks? _renderSurfaceCallbacks;
   late _TerminalSessionState _state;
   ClipboardWriteCallback? _onClipboardWrite;
   ClipboardReadCallback? _onClipboardRead;
@@ -74,11 +80,13 @@ final class TerminalSession extends TerminalController with ChangeNotifier {
     bool retainContinuation = false,
     bool deferResize = true,
     bool preserveSnapshotColors = true,
+    bool compressHistory = false,
   }) {
     final decoder = SnapshotDecoder(
       bytes,
       maxContinuationBytes: maxContinuationBytes,
       retainContinuation: retainContinuation,
+      compressHistory: compressHistory,
     );
     try {
       final terminal = progressive ? decoder.ready() : decoder.decode();
@@ -186,6 +194,12 @@ final class TerminalSession extends TerminalController with ChangeNotifier {
   }
 
   @override
+  MouseShape get mouseShape {
+    _checkNotDisposed();
+    return _state.mouseShape;
+  }
+
+  @override
   set onBell(VoidCallback? value) {
     _checkNotDisposed();
     _terminal.onBell = value;
@@ -227,9 +241,27 @@ final class TerminalSession extends TerminalController with ChangeNotifier {
   }
 
   @override
+  set onProgramStatus(TerminalProgramStatusCallback? callback) {
+    _checkNotDisposed();
+    _terminal.onProgramStatus = callback;
+  }
+
+  @override
   set onPwdChanged(VoidCallback? value) {
     _checkNotDisposed();
     _onPwdChanged = value;
+  }
+
+  @override
+  set onSemanticPrompt(TerminalSemanticPromptCallback? callback) {
+    _checkNotDisposed();
+    _terminal.onSemanticPrompt = callback;
+  }
+
+  @override
+  set onReset(VoidCallback? callback) {
+    _checkNotDisposed();
+    _terminal.onReset = callback;
   }
 
   @override
@@ -249,6 +281,12 @@ final class TerminalSession extends TerminalController with ChangeNotifier {
   }
 
   @override
+  set onUnknownSequence(TerminalUnknownSequenceCallback? callback) {
+    _checkNotDisposed();
+    _terminal.onUnknownSequence = callback;
+  }
+
+  @override
   String get pwd {
     _checkNotDisposed();
     return _pwd;
@@ -264,6 +302,12 @@ final class TerminalSession extends TerminalController with ChangeNotifier {
   Future<void> get restored {
     _checkNotDisposed();
     return _restorationCompletion?.future ?? _alreadyRestored;
+  }
+
+  @override
+  TerminalMemoryUsage get memoryUsage {
+    _checkNotDisposed();
+    return _terminal.memoryUsage;
   }
 
   @override
@@ -412,29 +456,39 @@ final class TerminalSession extends TerminalController with ChangeNotifier {
   @override
   void dispose() {
     if (_disposed) return;
+    final releaseRenderHold = _renderHoldPhase != .released;
+    final renderSurfaceCallbacks = _renderSurfaceCallbacks;
     _disposed = true;
-    final wasRestoring = _restorationState == .restoring;
-    if (wasRestoring) {
-      _restorationState = .failed;
+    _renderHoldPhase = _RenderHoldPhase.released;
+    _renderHoldTimeout?.cancel();
+    _renderHoldTimeout = null;
+    _renderSurfaceCallbacks = null;
+    try {
+      if (releaseRenderHold) renderSurfaceCallbacks?.onRenderHold(held: false);
+    } finally {
+      final wasRestoring = _restorationState == .restoring;
+      if (wasRestoring) {
+        _restorationState = .failed;
+      }
+      _releaseSnapshotDecoder();
+      final completion = _restorationCompletion;
+      if (wasRestoring && completion != null && !completion.isCompleted) {
+        completion.completeError(
+          StateError(
+            'TerminalController was disposed during snapshot restoration.',
+          ),
+        );
+      }
+      _viewToken = null;
+      _terminal.removeListener(_onTerminalChanged);
+      _selection.disposeInteraction();
+      _search.dispose();
+      _viewportChanges.dispose();
+      _frameChanges.dispose();
+      _encoder.dispose();
+      _terminal.dispose();
+      super.dispose();
     }
-    _releaseSnapshotDecoder();
-    final completion = _restorationCompletion;
-    if (wasRestoring && completion != null && !completion.isCompleted) {
-      completion.completeError(
-        StateError(
-          'TerminalController was disposed during snapshot restoration.',
-        ),
-      );
-    }
-    _viewToken = null;
-    _terminal.removeListener(_onTerminalChanged);
-    _selection.disposeInteraction();
-    _search.dispose();
-    _viewportChanges.dispose();
-    _frameChanges.dispose();
-    _encoder.dispose();
-    _terminal.dispose();
-    super.dispose();
   }
 
   SurfaceGeometry? handleResize(SurfaceMeasurement measurement) {
@@ -487,7 +541,27 @@ final class TerminalSession extends TerminalController with ChangeNotifier {
   void modeSet(TerminalMode mode, {required bool value}) {
     _checkNotDisposed();
     _terminal.modeSet(mode, value: value);
+    if (mode == const .syncOutput() && !value) {
+      _finishRenderHold();
+    }
     _publishState();
+  }
+
+  void _setRenderSurfaceCallbacks(RenderSurfaceCallbacks? callbacks) {
+    if (_disposed) return;
+    if (_renderSurfaceCallbacks == callbacks) return;
+    if (_renderHoldPhase != .released) _releaseRenderHold(notify: false);
+    _renderSurfaceCallbacks = callbacks;
+  }
+
+  bool get _renderHoldActive => _renderHoldPhase != .released;
+
+  bool _interruptRenderHoldForInteraction() {
+    if (_renderHoldActive) {
+      _releaseRenderHold();
+      return true;
+    }
+    return !(_renderSurfaceCallbacks?.isContentInteractionReady() ?? true);
   }
 
   @override
@@ -538,6 +612,14 @@ final class TerminalSession extends TerminalController with ChangeNotifier {
     if (_terminal.scrollbar.offset != previousOffset) {
       _publishViewportChange();
     }
+  }
+
+  @override
+  bool scrollToPrompt(int delta) {
+    _checkNotDisposed();
+    final moved = _terminal.scrollToPrompt(delta);
+    if (moved) _publishViewportChange();
+    return moved;
   }
 
   @override
@@ -597,7 +679,11 @@ final class TerminalSession extends TerminalController with ChangeNotifier {
   @override
   void write(Uint8List data) {
     _checkNotDisposed();
-    _terminal.write(data);
+    try {
+      _terminal.write(data);
+    } finally {
+      if (_renderHoldPhase == .releaseAfterWrite) _releaseRenderHold();
+    }
     if (_disposed) return;
     _scrollToBottomOnOutput();
   }
@@ -606,6 +692,53 @@ final class TerminalSession extends TerminalController with ChangeNotifier {
     _checkNotDisposed();
     for (final entry in _config.modes.entries) {
       _terminal.modeSet(entry.key, value: entry.value);
+      if (entry.key == const TerminalMode.syncOutput() && !entry.value) {
+        _finishRenderHold();
+      }
+    }
+  }
+
+  void _handleRenderHold({required bool held}) {
+    if (_disposed) return;
+    if (!held) {
+      _finishRenderHold();
+      return;
+    }
+
+    if (_renderHoldPhase != .released) return;
+    _renderHoldPhase = .releaseAfterWrite;
+    _renderHoldTimeout = Timer(const Duration(seconds: 1), _releaseRenderHold);
+    try {
+      final captured =
+          _renderSurfaceCallbacks?.onRenderHold(held: true) ?? false;
+      if (_renderHoldPhase == .releaseAfterWrite && !_disposed && captured) {
+        _renderHoldPhase = .captured;
+      }
+    } on Object {
+      if (_renderHoldPhase != .released) {
+        _renderHoldPhase = .releaseAfterWrite;
+      }
+      rethrow;
+    } finally {
+      if (!_disposed) notifyListeners();
+    }
+  }
+
+  void _releaseRenderHold({bool notify = true}) {
+    if (_renderHoldPhase == .released) return;
+    _terminal.modeSet(const TerminalMode.syncOutput(), value: false);
+    _finishRenderHold(notify: notify);
+  }
+
+  void _finishRenderHold({bool notify = true}) {
+    if (_renderHoldPhase == .released) return;
+    _renderHoldTimeout?.cancel();
+    _renderHoldTimeout = null;
+    _renderHoldPhase = .released;
+    try {
+      _renderSurfaceCallbacks?.onRenderHold(held: false);
+    } finally {
+      if (notify && !_disposed) notifyListeners();
     }
   }
 
@@ -613,10 +746,14 @@ final class TerminalSession extends TerminalController with ChangeNotifier {
     _terminal.continuationMaxBytes = _config.continuationMaxBytes;
     _terminal.scrollbackMaxBytes = _config.scrollbackMaxBytes;
     _terminal.scrollbackMaxLines = _config.scrollbackMaxLines;
+    _terminal.resizePullScrollback = _config.resizePullScrollback;
     _terminal.kittyImageStorageLimit = _config.kittyImageStorageLimit;
     _terminal.clipboardWriteMaxBytes = _config.clipboardWriteMaxBytes;
+    _terminal.unknownSequenceMaxBytes = _config.unknownSequenceMaxBytes;
     _terminal.setApcBufferLimit(_config.apcBufferLimit);
     _terminal.setGlyphProtocol(enabled: _config.glyphProtocol);
+    _terminal.xtChecksumReport = _config.xtChecksumReport;
+    _terminal.xtChecksumExtension = _config.xtChecksumExtension;
     _terminal.defaultCursorShape = .fromValue(_config.cursorStyle.value);
     _terminal.defaultCursorBlink = _config.cursorBlink;
   }
@@ -827,6 +964,7 @@ final class TerminalSession extends TerminalController with ChangeNotifier {
 
   _TerminalSessionState _readState() => (
     activeScreen: _terminal.activeScreen,
+    mouseShape: _terminal.mouseShape,
     mouseTracking: _terminal.mouseTracking,
     alternateScroll: _terminal.modeGet(const .alternateScroll()),
     cursorKeyApplication: _terminal.modeGet(const .cursorKeys()),
@@ -877,6 +1015,7 @@ final class TerminalSession extends TerminalController with ChangeNotifier {
   }
 
   void _wireTerminalCallbacks() {
+    _terminal.onRenderHold = (held) => _handleRenderHold(held: held);
     _terminal.onColorScheme = () => _colorScheme;
     _terminal.onSize = _handleSizeQuery;
     _terminal.onPwdChanged = _handlePwdChanged;

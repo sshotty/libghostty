@@ -113,6 +113,12 @@ class TerminalConfig {
   /// value can prune immediately.
   final int? scrollbackMaxLines;
 
+  /// Whether a resize can pull rows from scrollback into the active grid.
+  ///
+  /// Defaults to true, matching libghostty. Set false when the PTY backend
+  /// maintains its own screen buffer without scrollback.
+  final bool resizePullScrollback;
+
   /// Maximum bytes of Kitty graphics image storage.
   ///
   /// Caps the in-memory footprint of images transmitted via the Kitty
@@ -126,6 +132,13 @@ class TerminalConfig {
   /// Defaults to 65 MiB. Set to 0 to reject APC payload data.
   final int apcBufferLimit;
 
+  /// Maximum bytes captured from an unsupported terminal string sequence.
+  ///
+  /// Defaults to zero, which disables capture. Positive values enable bounded
+  /// capture for [TerminalController.onUnknownSequence]. Values range from
+  /// zero through `0xffffffff` for consistent native and WebAssembly behavior.
+  final int unknownSequenceMaxBytes;
+
   /// Maximum decoded bytes accepted in one Kitty clipboard write.
   ///
   /// Defaults to libghostty's 64 MiB limit. Set to null to restore that
@@ -137,6 +150,30 @@ class TerminalConfig {
   /// Defaults to false. Enable to parse Glyph Protocol image payloads in
   /// addition to Kitty graphics.
   final bool glyphProtocol;
+
+  /// Whether the terminal answers DECRQCRA checksum requests.
+  ///
+  /// Defaults to false because checksum requests can reveal terminal screen
+  /// contents. While disabled, XTCHECKSUM requests cannot change the
+  /// calculation.
+  final bool xtChecksumReport;
+
+  /// DECRQCRA checksum calculation flags and the default restored by RIS.
+  ///
+  /// Defaults to 0, which uses the DEC calculation. Values range from 0 to
+  /// 31. Combine these bit flags to change the calculation:
+  ///
+  /// - `1`: do not negate the result.
+  /// - `2`: do not add each cell's video attributes.
+  /// - `4`: do not omit blank cells.
+  /// - `8`: count cells never written to as spaces.
+  /// - `16`: use full codepoints instead of DEC 8-bit values.
+  ///
+  /// A running program can change the current calculation with XTCHECKSUM
+  /// when [xtChecksumReport] is enabled. Applying a configuration or performing
+  /// a RIS reset restores the configured calculation. Set
+  /// `xtChecksumExtension: 0` in [copyWith] to restore the DEC calculation.
+  final int xtChecksumExtension;
 
   /// Initial cursor shape. Terminal programs can override via DECSCUSR.
   final CursorShape cursorStyle;
@@ -187,13 +224,17 @@ class TerminalConfig {
     this.continuationMaxBytes = 0,
     this.cursorBlink,
     this.glyphProtocol = false,
+    this.xtChecksumReport = false,
+    this.xtChecksumExtension = 0,
     this.apcBufferLimit = defaultApcBufferLimit,
+    this.unknownSequenceMaxBytes = 0,
     this.clipboardWriteMaxBytes,
     this.enquiryResponse = '',
     this.modes = defaultModes,
     this.cursorStyle = .block,
     this.scrollbackMaxBytes = 10_000,
     this.scrollbackMaxLines,
+    this.resizePullScrollback = true,
     this.kittyImageStorageLimit = 64 * 1024 * 1024,
     this.selectionClearOnTyping = true,
     this.scrollToBottom = .onKeystroke,
@@ -209,6 +250,10 @@ class TerminalConfig {
          'continuationMaxBytes must fit an unsigned 32-bit integer',
        ),
        assert(
+         xtChecksumExtension >= 0 && xtChecksumExtension <= 31,
+         'xtChecksumExtension must be between 0 and 31',
+       ),
+       assert(
          scrollbackMaxBytes == null || scrollbackMaxBytes >= 0,
          'scrollbackMaxBytes must be non-negative',
        ),
@@ -222,6 +267,14 @@ class TerminalConfig {
        ),
        assert(apcBufferLimit >= 0, 'apcBufferLimit must be non-negative'),
        assert(
+         unknownSequenceMaxBytes >= 0,
+         'unknownSequenceMaxBytes must be non-negative',
+       ),
+       assert(
+         unknownSequenceMaxBytes <= 0xffffffff,
+         'unknownSequenceMaxBytes must fit an unsigned 32-bit integer',
+       ),
+       assert(
          clipboardWriteMaxBytes == null || clipboardWriteMaxBytes >= 0,
          'clipboardWriteMaxBytes must be non-negative',
        );
@@ -233,10 +286,14 @@ class TerminalConfig {
     continuationMaxBytes,
     scrollbackMaxBytes,
     scrollbackMaxLines,
+    resizePullScrollback,
     kittyImageStorageLimit,
     apcBufferLimit,
+    unknownSequenceMaxBytes,
     clipboardWriteMaxBytes,
     glyphProtocol,
+    xtChecksumReport,
+    xtChecksumExtension,
     cursorStyle,
     cursorBlink,
     .hashAllUnordered(modes.entries.map((e) => .hash(e.key, e.value))),
@@ -255,10 +312,14 @@ class TerminalConfig {
           continuationMaxBytes == other.continuationMaxBytes &&
           scrollbackMaxBytes == other.scrollbackMaxBytes &&
           scrollbackMaxLines == other.scrollbackMaxLines &&
+          resizePullScrollback == other.resizePullScrollback &&
           kittyImageStorageLimit == other.kittyImageStorageLimit &&
           apcBufferLimit == other.apcBufferLimit &&
+          unknownSequenceMaxBytes == other.unknownSequenceMaxBytes &&
           clipboardWriteMaxBytes == other.clipboardWriteMaxBytes &&
           glyphProtocol == other.glyphProtocol &&
+          xtChecksumReport == other.xtChecksumReport &&
+          xtChecksumExtension == other.xtChecksumExtension &&
           cursorStyle == other.cursorStyle &&
           cursorBlink == other.cursorBlink &&
           mapEquals(modes, other.modes) &&
@@ -274,10 +335,14 @@ class TerminalConfig {
     int? continuationMaxBytes,
     int? scrollbackMaxBytes,
     int? scrollbackMaxLines,
+    bool? resizePullScrollback,
     int? kittyImageStorageLimit,
     int? apcBufferLimit,
+    int? unknownSequenceMaxBytes,
     int? clipboardWriteMaxBytes,
     bool? glyphProtocol,
+    bool? xtChecksumReport,
+    int? xtChecksumExtension,
     CursorShape? cursorStyle,
     bool? cursorBlink,
     Map<TerminalMode, bool>? modes,
@@ -292,12 +357,17 @@ class TerminalConfig {
       continuationMaxBytes: continuationMaxBytes ?? this.continuationMaxBytes,
       scrollbackMaxBytes: scrollbackMaxBytes ?? this.scrollbackMaxBytes,
       scrollbackMaxLines: scrollbackMaxLines ?? this.scrollbackMaxLines,
+      resizePullScrollback: resizePullScrollback ?? this.resizePullScrollback,
       kittyImageStorageLimit:
           kittyImageStorageLimit ?? this.kittyImageStorageLimit,
       apcBufferLimit: apcBufferLimit ?? this.apcBufferLimit,
+      unknownSequenceMaxBytes:
+          unknownSequenceMaxBytes ?? this.unknownSequenceMaxBytes,
       clipboardWriteMaxBytes:
           clipboardWriteMaxBytes ?? this.clipboardWriteMaxBytes,
       glyphProtocol: glyphProtocol ?? this.glyphProtocol,
+      xtChecksumReport: xtChecksumReport ?? this.xtChecksumReport,
+      xtChecksumExtension: xtChecksumExtension ?? this.xtChecksumExtension,
       cursorStyle: cursorStyle ?? this.cursorStyle,
       cursorBlink: cursorBlink ?? this.cursorBlink,
       modes: modes ?? this.modes,
@@ -314,7 +384,11 @@ class TerminalConfig {
       'TerminalConfig('
       'cols: $cols, rows: $rows, '
       'continuationMaxBytes: $continuationMaxBytes, '
+      'unknownSequenceMaxBytes: $unknownSequenceMaxBytes, '
+      'xtChecksumReport: $xtChecksumReport, '
+      'xtChecksumExtension: $xtChecksumExtension, '
       'scrollbackMaxBytes: $scrollbackMaxBytes, '
       'scrollbackMaxLines: $scrollbackMaxLines, '
+      'resizePullScrollback: $resizePullScrollback, '
       'modes: ${modes.length} entries)';
 }

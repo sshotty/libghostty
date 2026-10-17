@@ -12,7 +12,9 @@ void main() {
         expect(config.rows, 24);
         expect(config.scrollbackMaxBytes, 10000);
         expect(config.scrollbackMaxLines, isNull);
+        expect(config.resizePullScrollback, isTrue);
         expect(config.continuationMaxBytes, 0);
+        expect(config.unknownSequenceMaxBytes, 0);
         expect(config.cursorStyle, CursorShape.block);
         expect(config.cursorBlink, isNull);
         expect(config.glyphProtocol, isFalse);
@@ -49,6 +51,23 @@ void main() {
       test('rejects a continuation limit above the portable maximum', () {
         expect(
           () => TerminalConfig(continuationMaxBytes: 0x100000000),
+          throwsA(isA<AssertionError>()),
+        );
+      });
+
+      test('accepts the maximum portable unknown sequence capture limit', () {
+        const config = TerminalConfig(unknownSequenceMaxBytes: 0xffffffff);
+
+        expect(config.unknownSequenceMaxBytes, 0xffffffff);
+      });
+
+      test('rejects an invalid unknown sequence capture limit', () {
+        expect(
+          () => TerminalConfig(unknownSequenceMaxBytes: -1),
+          throwsA(isA<AssertionError>()),
+        );
+        expect(
+          () => TerminalConfig(unknownSequenceMaxBytes: 0x100000000),
           throwsA(isA<AssertionError>()),
         );
       });
@@ -105,6 +124,32 @@ void main() {
         expect(updated.continuationMaxBytes, 2048);
         expect(updated.cols, config.cols);
       });
+
+      test('copies the unknown sequence capture limit', () {
+        const original = TerminalConfig(unknownSequenceMaxBytes: 16);
+
+        expect(original.copyWith(), original);
+        expect(
+          original.copyWith(unknownSequenceMaxBytes: 0),
+          const TerminalConfig(),
+        );
+        expect(
+          original
+              .copyWith(unknownSequenceMaxBytes: 32)
+              .unknownSequenceMaxBytes,
+          32,
+        );
+      });
+
+      test('copies resize pull-scrollback policy', () {
+        const original = TerminalConfig();
+
+        expect(
+          original.copyWith(resizePullScrollback: false).resizePullScrollback,
+          isFalse,
+        );
+        expect(original.copyWith().resizePullScrollback, isTrue);
+      });
     });
 
     group('equality', () {
@@ -141,6 +186,13 @@ void main() {
         const glyphProtocol = TerminalConfig(glyphProtocol: true);
         expect(a, isNot(equals(glyphProtocol)));
 
+        const keepBackendHistory = TerminalConfig(resizePullScrollback: false);
+        expect(keepBackendHistory, isNot(equals(a)));
+        expect(
+          keepBackendHistory.toString(),
+          contains('resizePullScrollback: false'),
+        );
+
         const byteLimited = TerminalConfig(scrollbackMaxBytes: 1024);
         const lineLimited = TerminalConfig(scrollbackMaxLines: 1024);
         expect(a, isNot(equals(byteLimited)));
@@ -151,6 +203,13 @@ void main() {
         const continuationC = TerminalConfig(continuationMaxBytes: 1024);
         expect(continuationA, equals(continuationC));
         expect(continuationA, isNot(equals(continuationB)));
+
+        const captureA = TerminalConfig(unknownSequenceMaxBytes: 1024);
+        const captureB = TerminalConfig(unknownSequenceMaxBytes: 2048);
+        const captureC = TerminalConfig(unknownSequenceMaxBytes: 1024);
+        expect(captureA, equals(captureC));
+        expect(captureA.hashCode, equals(captureC.hashCode));
+        expect(captureA, isNot(equals(captureB)));
       });
 
       test('ignores map order', () {

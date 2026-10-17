@@ -33,6 +33,8 @@ void main() {
         terminal.dispose();
 
         expect(() => terminal.title, throwsStateError);
+        expect(() => terminal.scrollToPrompt(0), throwsStateError);
+        expect(() => terminal.scrollToPrompt(1), throwsStateError);
         expect(
           () => terminal.write(Uint8List.fromList([0x61])),
           throwsStateError,
@@ -122,6 +124,108 @@ void main() {
       });
     });
 
+    group('prompt navigation', () {
+      test('scrolls by signed OSC 133 prompt groups', () {
+        terminal.resize(cols: 80, rows: 2);
+        terminal.write(
+          Uint8List.fromList(
+            utf8.encode(
+              '\x1b]133;P;k=i\x07p1\r\n'
+              '\x1b]133;B\x07cmd1\r\n'
+              '\x1b]133;C\x07out1\r\n'
+              '\x1b]133;P;k=i\x07p2\r\n'
+              '\x1b]133;B\x07cmd2\r\n'
+              '\x1b]133;C\x07out2\r\n'
+              '\x1b]133;P;k=i\x07p3\r\n'
+              '\x1b]133;B\x07cmd3\r\n'
+              '\x1b]133;C\x07out3\r\n'
+              '\x1b]133;P;k=i\x07p4',
+            ),
+          ),
+        );
+
+        expect(terminal.scrollToPrompt(-1), isTrue);
+        expect(terminal.scrollbar.offset, 6);
+        expect(terminal.scrollToPrompt(-1), isTrue);
+        expect(terminal.scrollbar.offset, 3);
+        expect(terminal.scrollToPrompt(1), isTrue);
+        expect(terminal.scrollbar.offset, 6);
+        expect(terminal.scrollToPrompt(0), isFalse);
+        expect(terminal.scrollbar.offset, 6);
+
+        expect(terminal.scrollToPrompt(100), isTrue);
+        expect(terminal.scrollbar.offset, 8);
+        expect(terminal.scrollToPrompt(1), isFalse);
+        expect(terminal.scrollbar.offset, 8);
+      });
+
+      test('scrolls to the active area past a final prompt continuation', () {
+        terminal.resize(cols: 80, rows: 3);
+        terminal.write(
+          Uint8List.fromList(
+            utf8.encode(
+              '\x1b]133;P;k=i\x07prompt\r\n'
+              '\x1b]133;P;k=c\x07continued\r\n'
+              'continued\r\ncontinued\r\ncontinued\r\ncontinued\r\ncontinued',
+            ),
+          ),
+        );
+        terminal.scrollToRow(1);
+
+        expect(terminal.scrollbar.offset, 1);
+        expect(terminal.scrollToPrompt(1), isTrue);
+        expect(terminal.scrollbar.offset, 4);
+        expect(terminal.isViewportActive, isTrue);
+      });
+
+      test('returns false without retained prompt markers', () {
+        terminal.resize(cols: 80, rows: 2);
+        terminal.write(
+          Uint8List.fromList(utf8.encode('one\r\ntwo\r\nthree\r\nfour')),
+        );
+        terminal.scrollToRow(0);
+
+        expect(terminal.scrollToPrompt(1), isFalse);
+        expect(terminal.scrollbar.offset, 0);
+      });
+
+      test('saturates oversized counts without wrapping direction', () {
+        terminal.resize(cols: 80, rows: 2);
+        terminal.write(
+          Uint8List.fromList(
+            utf8.encode(
+              '\x1b]133;P;k=i\x07p1\r\n'
+              '\x1b]133;B\x07cmd1\r\n'
+              '\x1b]133;C\x07out1\r\n'
+              '\x1b]133;P;k=i\x07p2\r\n'
+              '\x1b]133;B\x07cmd2\r\n'
+              '\x1b]133;C\x07out2\r\n'
+              '\x1b]133;P;k=i\x07p3\r\n'
+              '\x1b]133;B\x07cmd3\r\n'
+              '\x1b]133;C\x07out3\r\n'
+              '\x1b]133;P;k=i\x07p4',
+            ),
+          ),
+        );
+
+        terminal.scrollToTop();
+        expect(terminal.scrollToPrompt(0x80000000), isTrue);
+        expect(terminal.scrollbar.offset, 8);
+
+        terminal.scrollToTop();
+        expect(terminal.scrollToPrompt(0x100000000), isTrue);
+        expect(terminal.scrollbar.offset, 8);
+
+        terminal.scrollToBottom();
+        expect(terminal.scrollToPrompt(-0x80000000), isTrue);
+        expect(terminal.scrollbar.offset, 0);
+
+        terminal.scrollToBottom();
+        expect(terminal.scrollToPrompt(-0x100000000), isTrue);
+        expect(terminal.scrollbar.offset, 0);
+      });
+    });
+
     group('unknown sequences', () {
       test('copies binary APC content and reports truncation', () {
         TerminalUnknownSequence? sequence;
@@ -135,6 +239,18 @@ void main() {
         expect(sequence?.tag, TerminalUnknownSequenceTag.apc);
         expect(sequence?.content, Uint8List.fromList([0x00, 0x01]));
         expect(sequence?.truncated, isTrue);
+      });
+
+      test('copies unknown OSC content and its terminator', () {
+        TerminalUnknownSequence? sequence;
+        terminal.unknownSequenceMaxBytes = 32;
+        terminal.onUnknownSequence = (value) => sequence = value;
+
+        terminal.write(Uint8List.fromList('\x1b]7400;x\x1b\\'.codeUnits));
+
+        expect(sequence?.tag, TerminalUnknownSequenceTag.osc);
+        expect(sequence?.content, Uint8List.fromList('7400;x'.codeUnits));
+        expect(sequence?.terminator, OscTerminator.st);
       });
 
       test('clears the callback and capture limit', () {
@@ -327,6 +443,164 @@ void main() {
         terminal.write(Uint8List.fromList('\x1b]9;4;3\x07'.codeUnits));
 
         expect(report, const TerminalProgress(state: .indeterminate));
+      });
+    });
+
+    group('onProgramStatus', () {
+      test('copies validated OSC 7501 report fields', () {
+        final reports = <TerminalProgramStatus>[];
+        terminal.onProgramStatus = reports.add;
+
+        terminal.write(
+          Uint8List.fromList(
+            '\x1b]7501;state=blocked:kind=permission:progress=40:id=a/b'
+                    ':app=terraform:title=UGxhbg==:msg=QXBwbHk/\x07'
+                .codeUnits,
+          ),
+        );
+
+        expect(
+          reports.first,
+          const TerminalProgramStatus(
+            state: ProgramStatusState.blocked,
+            kind: ProgramStatusKind.permission,
+            progress: 40,
+            id: 'a/b',
+            app: 'terraform',
+            title: 'Plan',
+            message: 'Apply?',
+          ),
+        );
+
+        terminal.write(
+          Uint8List.fromList('\x1b]7501;state=done\x07'.codeUnits),
+        );
+
+        expect(reports.first.message, 'Apply?');
+        expect(reports.last.state, ProgramStatusState.done);
+      });
+    });
+
+    group('onSemanticPrompt', () {
+      test('copies OSC 133 command lifecycle fields', () {
+        final events = <TerminalSemanticPrompt>[];
+        terminal.onSemanticPrompt = events.add;
+
+        terminal.write(
+          Uint8List.fromList('\x1b]133;D;-1;err=boom\x07'.codeUnits),
+        );
+
+        expect(
+          events.first,
+          const TerminalSemanticPrompt(
+            kind: SemanticPromptKind.commandEnd,
+            promptKind: SemanticPromptPromptKind.primary,
+            exitCode: -1,
+            command: '',
+            error: 'boom',
+          ),
+        );
+
+        terminal.write(Uint8List.fromList('\x1b]133;A\x07'.codeUnits));
+        expect(events.first.error, 'boom');
+        expect(events.last.kind, SemanticPromptKind.promptStart);
+      });
+    });
+
+    group('onRenderHold', () {
+      test('reports synchronized output start and end', () {
+        final events = <bool>[];
+        terminal.onRenderHold = events.add;
+
+        terminal.write(Uint8List.fromList('\x1b[?2026h\x1b[?2026l'.codeUnits));
+
+        expect(events, [true, false]);
+      });
+    });
+
+    group('onReset', () {
+      test('reports full resets sent through RIS', () {
+        var count = 0;
+        terminal.onReset = () => count++;
+
+        terminal.write(Uint8List.fromList('\x1bc'.codeUnits));
+
+        expect(count, 1);
+      });
+    });
+
+    group('XT checksum options', () {
+      test('enables reports and restores the default calculation', () {
+        final output = <int>[];
+        terminal.onWritePty = output.addAll;
+        terminal.write(Uint8List.fromList('hello'.codeUnits));
+        terminal.xtChecksumReport = true;
+        terminal.xtChecksumExtension = 1;
+
+        terminal.write(Uint8List.fromList('\x1b[1;1;1;1;1;5*y'.codeUnits));
+        expect(output, Uint8List.fromList('\x1bP1!~0214\x1b\\'.codeUnits));
+
+        output.clear();
+        terminal.write(Uint8List.fromList('\x1b[0#y\x1bc'.codeUnits));
+        terminal.write(Uint8List.fromList('hello'.codeUnits));
+        terminal.write(Uint8List.fromList('\x1b[1;1;1;1;1;5*y'.codeUnits));
+        expect(output, Uint8List.fromList('\x1bP1!~0214\x1b\\'.codeUnits));
+
+        terminal.xtChecksumExtension = null;
+        output.clear();
+        terminal.write(Uint8List.fromList('\x1b[1;1;1;1;1;5*y'.codeUnits));
+        expect(output, Uint8List.fromList('\x1bP1!~FDEC\x1b\\'.codeUnits));
+
+        terminal.xtChecksumReport = false;
+        output.clear();
+        terminal.write(Uint8List.fromList('\x1b[1;1;1;1;1;5*y'.codeUnits));
+        expect(output, isEmpty);
+      });
+
+      test('rejects checksum extension flags outside five bits', () {
+        expect(() => terminal.xtChecksumExtension = 32, throwsRangeError);
+      });
+    });
+
+    test('resize pull scrollback controls whether growth restores history', () {
+      terminal.resize(cols: 5, rows: 3);
+      terminal.resizePullScrollback = false;
+      terminal.write(Uint8List.fromList('1\n2\n3\n4\n5'.codeUnits));
+      terminal.resize(cols: 5, rows: 5);
+      expect(terminal.scrollbackRows, greaterThan(0));
+
+      terminal.resizePullScrollback = null;
+
+      final defaultTerminal = Terminal(cols: 5, rows: 3);
+      addTearDown(defaultTerminal.dispose);
+      defaultTerminal.write(Uint8List.fromList('1\n2\n3\n4\n5'.codeUnits));
+      defaultTerminal.resize(cols: 5, rows: 5);
+      expect(defaultTerminal.scrollbackRows, 0);
+    });
+
+    group('terminal data', () {
+      test('reports the current mouse shape', () {
+        expect(terminal.mouseShape, MouseShape.text);
+
+        terminal.write(Uint8List.fromList('\x1b]22;pointer\x07'.codeUnits));
+        expect(terminal.mouseShape, MouseShape.pointer);
+
+        terminal.write(Uint8List.fromList('\x1b]22;\x07'.codeUnits));
+        expect(terminal.mouseShape, MouseShape.text);
+      });
+
+      test('reports coherent screen memory usage', () {
+        final usage = terminal.memoryUsage;
+
+        expect(usage.primaryPages, greaterThan(0));
+        expect(
+          usage.primaryVirtualBytes,
+          greaterThanOrEqualTo(usage.primaryResidentBytes),
+        );
+        expect(
+          usage.alternateVirtualBytes,
+          greaterThanOrEqualTo(usage.alternateResidentBytes),
+        );
       });
     });
 
@@ -788,17 +1062,11 @@ void main() {
     });
 
     group('compress', () {
-      test('reports unsupported full compression on Windows', () {
-        final result = terminal.compress(mode: .full);
-
-        expect(result, TerminalCompressionResult.unsupported);
-      }, testOn: 'windows');
-
       test('completes full compression on supported targets', () {
         final result = terminal.compress(mode: .full);
 
         expect(result, TerminalCompressionResult.complete);
-      }, testOn: 'linux || mac-os || android || ios');
+      }, testOn: 'windows || linux || mac-os || android || ios');
     });
 
     group('onClipboardWrite', () {
