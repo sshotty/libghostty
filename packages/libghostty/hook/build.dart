@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:code_assets/code_assets.dart';
 import 'package:hooks/hooks.dart';
 import 'package:libghostty/src/hook/library_provider.dart';
+import 'package:libghostty/src/hook/ghostty_source.dart' show pinnedCommit;
 
 void main(List<String> args) async {
   await build(args, _build);
@@ -15,7 +16,11 @@ Future<void> _build(BuildInput input, BuildOutputBuilder output) async {
 
   final targetOS = input.config.code.targetOS;
   final libFileName = targetOS.dylibFileName('ghostty');
-  final installDir = input.outputDirectory;
+  // A hook reruns when ghostty.version changes, but its output directory can
+  // stay the same. Never reuse a binary built for the preceding Dart ABI.
+  final installDir = input.outputDirectory.resolve(
+    'ghostty-${pinnedCommit(input.packageRoot)}/',
+  );
   final libFile = File.fromUri(installDir.resolve('lib/$libFileName'));
 
   if (!libFile.existsSync()) {
