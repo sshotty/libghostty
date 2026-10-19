@@ -2,8 +2,8 @@ import 'dart:io';
 
 import 'package:code_assets/code_assets.dart';
 import 'package:hooks/hooks.dart';
-import 'package:libghostty/src/hook/library_provider.dart';
 import 'package:libghostty/src/hook/ghostty_source.dart' show pinnedCommit;
+import 'package:libghostty/src/hook/library_provider.dart';
 
 void main(List<String> args) async {
   await build(args, _build);
